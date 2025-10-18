@@ -114,4 +114,18 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.Migrate();
+        Console.WriteLine("✅ Database migration başarılı");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Migration hatası: {ex.Message}");
+    }
+}
+
 app.Run();

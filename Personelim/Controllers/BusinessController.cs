@@ -21,7 +21,11 @@ namespace Personelim.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateBusiness([FromBody] CreateBusinessRequest request)
         {
-            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized("Token içinde User ID bulunamadı");
+
+            var userId = Guid.Parse(userIdClaim.Value);
             var result = await _businessService.CreateBusinessAsync(userId, request);
 
             if (!result.Success)
@@ -33,7 +37,11 @@ namespace Personelim.Controllers
         [HttpGet("my-businesses")]
         public async Task<IActionResult> GetMyBusinesses()
         {
-            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized("Token içinde User ID bulunamadı");
+
+            var userId = Guid.Parse(userIdClaim.Value);
             var result = await _businessService.GetUserBusinessesAsync(userId);
 
             if (!result.Success)

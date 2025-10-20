@@ -45,6 +45,10 @@ namespace Personelim.Data
             modelBuilder.Entity<BusinessMember>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                
+                entity.Property(e => e.Role)
+                    .HasConversion<string>();
+                
                 entity.HasIndex(e => new { e.UserId, e.BusinessId }).IsUnique();
 
                 entity.HasOne(e => e.User)

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Personelim")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f589ea2db5c403e90438f17775232d63fe054368")]
 [assembly: System.Reflection.AssemblyProductAttribute("Personelim")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Personelim")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

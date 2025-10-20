@@ -21,7 +21,11 @@ namespace Personelim.Controllers
         [HttpPost("send")]
         public async Task<IActionResult> SendInvitation([FromBody] SendInvitationRequest request)
         {
-            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized("Token içinde User ID bulunamadı");
+
+            var userId = Guid.Parse(userIdClaim.Value);
             var result = await _invitationService.SendInvitationAsync(userId, request);
 
             if (!result.Success)
@@ -33,7 +37,11 @@ namespace Personelim.Controllers
         [HttpPost("accept/{invitationCode}")]
         public async Task<IActionResult> AcceptInvitation(string invitationCode)
         {
-            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized("Token içinde User ID bulunamadı");
+
+            var userId = Guid.Parse(userIdClaim.Value);
             var result = await _invitationService.AcceptInvitationAsync(userId, invitationCode);
 
             if (!result.Success)
@@ -45,7 +53,11 @@ namespace Personelim.Controllers
         [HttpGet("my-invitations")]
         public async Task<IActionResult> GetMyInvitations()
         {
-            var email = User.FindFirst(ClaimTypes.Email).Value;
+            var userEmailClaim = User.FindFirst(ClaimTypes.Email);
+            if (userEmailClaim == null)
+                return Unauthorized("Token içinde User ID bulunamadı");
+
+            var email = userEmailClaim.Value;
             var result = await _invitationService.GetUserInvitationsAsync(email);
 
             if (!result.Success)

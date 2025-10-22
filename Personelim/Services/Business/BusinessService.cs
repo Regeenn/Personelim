@@ -17,55 +17,87 @@ namespace Personelim.Services.Business
         }
 
         public async Task<ServiceResponse<BusinessResponse>> CreateBusinessAsync(Guid userId, CreateBusinessRequest request)
+{
+    using var transaction = await _context.Database.BeginTransactionAsync();
+    try
+    {
+        Console.WriteLine("========== DEBUG START ==========");
+        Console.WriteLine($"UserId: {userId}");
+        Console.WriteLine($"Request Name: '{request.Name}'");
+        
+        var business = new Models.Business
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                // İşletme oluştur
-                var business = new Models.Business
-                {
-                    Name = request.Name,
-                    Description = request.Description,
-                    Address = request.Address,
-                    PhoneNumber = request.PhoneNumber,
-                    OwnerId = userId
-                };
-
-                _context.Businesses.Add(business);
-                await _context.SaveChangesAsync();
-
-                // Owner üyeliği oluştur
-                var ownerMembership = new BusinessMember
-                {
-                    UserId = userId,
-                    BusinessId = business.Id,
-                    Role = UserRole.Owner
-                };
-
-                _context.BusinessMembers.Add(ownerMembership);
-                await _context.SaveChangesAsync();
-
-                await transaction.CommitAsync();
-
-                var response = new BusinessResponse
-                {
-                    Id = business.Id,
-                    Name = business.Name,
-                    Description = business.Description,
-                    Address = business.Address,
-                    Role = "Owner",
-                    MemberCount = 1,
-                    CreatedAt = business.CreatedAt
-                };
-
-                return ServiceResponse<BusinessResponse>.SuccessResult(response, "İşletme başarıyla oluşturuldu");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return ServiceResponse<BusinessResponse>.ErrorResult("İşletme oluşturulurken hata oluştu", ex.Message);
-            }
-        }
+            Name = request.Name,
+            Description = request.Description,
+            Address = request.Address,
+            PhoneNumber = request.PhoneNumber,
+            OwnerId = userId
+        };
+        
+        Console.WriteLine($"Business ID: {business.Id}");
+        _context.Businesses.Add(business);
+        
+        Console.WriteLine("Business kaydediliyor...");
+        await _context.SaveChangesAsync();
+        Console.WriteLine("✅ Business kaydedildi");
+        
+        var ownerMembership = new BusinessMember
+        {
+            UserId = userId,
+            BusinessId = business.Id,
+            Role = UserRole.Owner
+        };
+        
+        Console.WriteLine($"Role: {ownerMembership.Role} (Type: {ownerMembership.Role.GetType()})");
+        _context.BusinessMembers.Add(ownerMembership);
+        
+        Console.WriteLine("Membership kaydediliyor...");
+        await _context.SaveChangesAsync();
+        Console.WriteLine("✅ Membership kaydedildi");
+        
+        await transaction.CommitAsync();
+        Console.WriteLine("========== DEBUG END ==========");
+        
+        var response = new BusinessResponse
+        {
+            Id = business.Id,
+            Name = business.Name,
+            Description = business.Description,
+            Address = business.Address,
+            Role = "Owner",
+            MemberCount = 1,
+            CreatedAt = business.CreatedAt
+        };
+        
+        return ServiceResponse<BusinessResponse>.SuccessResult(response, "İşletme başarıyla oluşturuldu");
+    }
+    catch (DbUpdateException dbEx)
+    {
+        await transaction.RollbackAsync();
+        Console.WriteLine("❌❌❌ DbUpdateException ❌❌❌");
+        Console.WriteLine($"Message: {dbEx.Message}");
+        Console.WriteLine($"InnerException: {dbEx.InnerException?.Message}");
+        Console.WriteLine($"StackTrace: {dbEx.StackTrace}");
+        
+        return ServiceResponse<BusinessResponse>.ErrorResult(
+            "Database hatası", 
+            dbEx.InnerException?.Message ?? dbEx.Message
+        );
+    }
+    catch (Exception ex)
+    {
+        await transaction.RollbackAsync();
+        Console.WriteLine("❌❌❌ Exception ❌❌❌");
+        Console.WriteLine($"Type: {ex.GetType().Name}");
+        Console.WriteLine($"Message: {ex.Message}");
+        Console.WriteLine($"InnerException: {ex.InnerException?.Message}");
+        
+        return ServiceResponse<BusinessResponse>.ErrorResult(
+            "İşletme oluşturulurken hata oluştu",
+            ex.InnerException?.Message ?? ex.Message
+        );
+    }
+}
 
         public async Task<ServiceResponse<List<BusinessResponse>>> GetUserBusinessesAsync(Guid userId)
         {

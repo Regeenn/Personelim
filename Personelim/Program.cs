@@ -60,7 +60,6 @@ builder.Services.AddCors(options =>
         });
 });
 
-// Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -98,8 +97,6 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
-
-// Configure the HTTP request pipeline.
 
     app.UseSwagger();
     app.UseSwaggerUI();

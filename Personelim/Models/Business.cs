@@ -12,7 +12,7 @@ namespace Personelim.Models
         public DateTime CreatedAt { get; set; }
 
         // Navigation Properties
-        public User Owner { get; set; }
+        public User? Owner { get; set; }
         public ICollection<BusinessMember> Members { get; set; }
         public ICollection<Invitation> Invitations { get; set; }
 

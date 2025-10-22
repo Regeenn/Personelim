@@ -13,8 +13,8 @@ namespace Personelim.Models
         public DateTime JoinedAt { get; set; }
 
         // Navigation Properties
-        public User User { get; set; }
-        public Business Business { get; set; }
+        public User? User { get; set; }
+        public Business? Business { get; set; }
 
         public BusinessMember()
         {

@@ -10,22 +10,33 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Environment Variables (Render.com için)
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") 
+    ?? builder.Configuration["Jwt:Key"];
+
+var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") 
+    ?? builder.Configuration["Jwt:Issuer"];
+
+var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") 
+    ?? builder.Configuration["Jwt:Audience"];
+
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Database
+// Database (Environment variable kullanır)
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 // Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 
-// JWT Authentication
-var jwtKey = builder.Configuration["Jwt:Key"];
+// JWT Authentication (Environment variable kullanır)
 var key = Encoding.UTF8.GetBytes(jwtKey);
-
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -40,9 +51,9 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ValidateIssuer = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidIssuer = jwtIssuer,
         ValidateAudience = true,
-        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidAudience = jwtAudience,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
@@ -60,6 +71,7 @@ builder.Services.AddCors(options =>
         });
 });
 
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -69,7 +81,7 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
         Description = "Personel yönetim sistemi API"
     });
-
+    
     // JWT Authentication için Swagger yapılandırması
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -79,7 +91,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer"
     });
-
+    
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -98,30 +110,34 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-    app.UseSwagger();
-    app.UseSwaggerUI();
-
+// Swagger (Production'da da aktif - istersen kapatabilirsin)
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowAll");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
+// Auto Migration (Startup'ta çalışır)
 using (var scope = app.Services.CreateScope())
 {
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        
+        Console.WriteLine("🔄 Database migration kontrol ediliyor...");
         db.Database.Migrate();
         Console.WriteLine("✅ Database migration başarılı");
     }
     catch (Exception ex)
     {
         Console.WriteLine($"❌ Migration hatası: {ex.Message}");
+        Console.WriteLine($"❌ Inner Exception: {ex.InnerException?.Message}");
+        
+        // Production'da migration hatası varsa uygulama başlamasın (opsiyonel)
+        // throw;
     }
 }
 

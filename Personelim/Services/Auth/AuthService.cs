@@ -140,5 +140,44 @@ namespace Personelim.Services.Auth
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return (tokenHandler.WriteToken(token), expiresAt);
         }
+        
+        public async Task<ServiceResponse<UserProfileResponse>> GetUserProfileAsync(Guid userId)
+        {
+            try
+            {
+                var user = await _context.Users
+                    .Include(u => u.BusinessMemberships)
+                    .Include(u => u.OwnedBusinesses)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+        
+                if (user == null)
+                {
+                    return ServiceResponse<UserProfileResponse>.ErrorResult("Kullanıcı bulunamadı");
+                }
+        
+                var response = new UserProfileResponse
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    FullName = user.GetFullName(),
+                    PhoneNumber = user.PhoneNumber,
+                    CreatedAt = user.CreatedAt,
+                    LastLoginAt = user.LastLoginAt,
+                    BusinessCount = user.BusinessMemberships.Count(bm => bm.IsActive),
+                    OwnedBusinessCount = user.OwnedBusinesses.Count(b => b.IsActive)
+                };
+        
+                return ServiceResponse<UserProfileResponse>.SuccessResult(response);
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<UserProfileResponse>.ErrorResult(
+                    "Profil bilgisi getirilirken hata oluştu", 
+                    ex.Message
+                );
+            }
+        }
     }
 }

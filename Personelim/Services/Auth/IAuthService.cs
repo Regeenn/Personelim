@@ -7,5 +7,7 @@ namespace Personelim.Services.Auth
     {
         Task<ServiceResponse<AuthResponse>> RegisterAsync(RegisterRequest request);
         Task<ServiceResponse<AuthResponse>> LoginAsync(LoginRequest request);
+        Task<ServiceResponse<UserProfileResponse>> GetUserProfileAsync(Guid userId);
     }
+   
 }

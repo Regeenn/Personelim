@@ -34,12 +34,9 @@ namespace Personelim.Services.Business
             OwnerId = userId
         };
         
-        Console.WriteLine($"Business ID: {business.Id}");
         _context.Businesses.Add(business);
         
-        Console.WriteLine("Business kaydediliyor...");
         await _context.SaveChangesAsync();
-        Console.WriteLine("✅ Business kaydedildi");
         
         var ownerMembership = new BusinessMember
         {
@@ -47,16 +44,10 @@ namespace Personelim.Services.Business
             BusinessId = business.Id,
             Role = UserRole.Owner
         };
-        
-        Console.WriteLine($"Role: {ownerMembership.Role} (Type: {ownerMembership.Role.GetType()})");
         _context.BusinessMembers.Add(ownerMembership);
-        
-        Console.WriteLine("Membership kaydediliyor...");
         await _context.SaveChangesAsync();
-        Console.WriteLine("✅ Membership kaydedildi");
         
         await transaction.CommitAsync();
-        Console.WriteLine("========== DEBUG END ==========");
         
         var response = new BusinessResponse
         {
@@ -74,10 +65,6 @@ namespace Personelim.Services.Business
     catch (DbUpdateException dbEx)
     {
         await transaction.RollbackAsync();
-        Console.WriteLine("❌❌❌ DbUpdateException ❌❌❌");
-        Console.WriteLine($"Message: {dbEx.Message}");
-        Console.WriteLine($"InnerException: {dbEx.InnerException?.Message}");
-        Console.WriteLine($"StackTrace: {dbEx.StackTrace}");
         
         return ServiceResponse<BusinessResponse>.ErrorResult(
             "Database hatası", 
@@ -87,10 +74,6 @@ namespace Personelim.Services.Business
     catch (Exception ex)
     {
         await transaction.RollbackAsync();
-        Console.WriteLine("❌❌❌ Exception ❌❌❌");
-        Console.WriteLine($"Type: {ex.GetType().Name}");
-        Console.WriteLine($"Message: {ex.Message}");
-        Console.WriteLine($"InnerException: {ex.InnerException?.Message}");
         
         return ServiceResponse<BusinessResponse>.ErrorResult(
             "İşletme oluşturulurken hata oluştu",

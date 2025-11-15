@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Personelim.DTOs.Auth;
 using Personelim.Services.Auth;
@@ -37,10 +38,11 @@ namespace Personelim.Controllers
 
             return Ok(result);
         }
+        [Authorize]
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
-            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             var result = await _authService.GetUserProfileAsync(userId);
     
             if (!result.Success)

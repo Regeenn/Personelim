@@ -13,6 +13,8 @@ namespace Personelim.Data
         public DbSet<Business> Businesses { get; set; }
         public DbSet<BusinessMember> BusinessMembers { get; set; }
         public DbSet<Invitation> Invitations { get; set; }
+        public DbSet<Province> Provinces { get; set; }
+        public DbSet<District> Districts { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -79,6 +81,48 @@ namespace Personelim.Data
                     .HasForeignKey(e => e.InvitedByUserId)
                     .OnDelete(DeleteBehavior.Restrict);
             });
+            
+            modelBuilder.Entity<Province>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedNever();
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            });
+
+            // District configuration
+            modelBuilder.Entity<District>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).ValueGeneratedNever();
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            
+                entity.HasOne(d => d.Province)
+                    .WithMany(p => p.Districts)
+                    .HasForeignKey(d => d.ProvinceId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Business configuration
+            modelBuilder.Entity<Business>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+            
+                entity.HasOne(b => b.Province)
+                    .WithMany()
+                    .HasForeignKey(b => b.ProvinceId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            
+                entity.HasOne(b => b.District)
+                    .WithMany()
+                    .HasForeignKey(b => b.DistrictId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            
+                entity.HasOne(b => b.Owner)
+                    .WithMany()
+                    .HasForeignKey(b => b.OwnerId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
         }
+        
     }
 }

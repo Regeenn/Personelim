@@ -7,10 +7,11 @@ using Personelim.Services.Auth;
 using Personelim.Services.Business;
 using Personelim.Services.Invitation;
 using System.Text;
+using Personelim.Services.Location;
+using Personelim.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Environment Variables (Render.com için)
 var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
@@ -23,19 +24,19 @@ var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER")
 var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") 
     ?? builder.Configuration["Jwt:Audience"];
 
-// Add services to the container.
 builder.Services.AddControllers();
 
-// Database (Environment variable kullanır)
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-// Services
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
+builder.Services.AddScoped<ILocationService, LocationService>();
 
-// JWT Authentication (Environment variable kullanır)
+builder.Services.AddScoped<IBusinessValidator, BusinessValidator>();
+
 var key = Encoding.UTF8.GetBytes(jwtKey);
 builder.Services.AddAuthentication(options =>
 {
@@ -59,7 +60,6 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
@@ -71,7 +71,6 @@ builder.Services.AddCors(options =>
         });
 });
 
-// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -82,7 +81,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = "Personel yönetim sistemi API"
     });
     
-    // JWT Authentication için Swagger yapılandırması
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header kullanarak Bearer şeması. Örnek: \"Authorization: Bearer {token}\"",
@@ -110,7 +108,6 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// Swagger (Production'da da aktif - istersen kapatabilirsin)
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -120,7 +117,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Auto Migration (Startup'ta çalışır)
 using (var scope = app.Services.CreateScope())
 {
     try
@@ -135,9 +131,7 @@ using (var scope = app.Services.CreateScope())
     {
         Console.WriteLine($"❌ Migration hatası: {ex.Message}");
         Console.WriteLine($"❌ Inner Exception: {ex.InnerException?.Message}");
-        
-        // Production'da migration hatası varsa uygulama başlamasın (opsiyonel)
-        // throw;
+       
     }
 }
 

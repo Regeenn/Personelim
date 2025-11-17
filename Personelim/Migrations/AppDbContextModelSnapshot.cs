@@ -29,6 +29,7 @@ namespace Personelim.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Address")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
@@ -36,6 +37,9 @@ namespace Personelim.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<int>("DistrictId")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -49,11 +53,24 @@ namespace Personelim.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("PhoneNumber")
+                        .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("ProvinceId")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DistrictId");
+
                     b.HasIndex("OwnerId");
+
+                    b.HasIndex("ProvinceId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Businesses");
                 });
@@ -91,6 +108,26 @@ namespace Personelim.Migrations
                         .IsUnique();
 
                     b.ToTable("BusinessMembers");
+                });
+
+            modelBuilder.Entity("Personelim.Models.District", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ProvinceId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProvinceId");
+
+                    b.ToTable("Districts");
                 });
 
             modelBuilder.Entity("Personelim.Models.Invitation", b =>
@@ -141,6 +178,21 @@ namespace Personelim.Migrations
                     b.ToTable("Invitations");
                 });
 
+            modelBuilder.Entity("Personelim.Models.Province", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Provinces");
+                });
+
             modelBuilder.Entity("Personelim.Models.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -188,13 +240,33 @@ namespace Personelim.Migrations
 
             modelBuilder.Entity("Personelim.Models.Business", b =>
                 {
-                    b.HasOne("Personelim.Models.User", "Owner")
-                        .WithMany("OwnedBusinesses")
-                        .HasForeignKey("OwnerId")
+                    b.HasOne("Personelim.Models.District", "District")
+                        .WithMany()
+                        .HasForeignKey("DistrictId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Personelim.Models.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Personelim.Models.Province", "Province")
+                        .WithMany()
+                        .HasForeignKey("ProvinceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Personelim.Models.User", null)
+                        .WithMany("OwnedBusinesses")
+                        .HasForeignKey("UserId");
+
+                    b.Navigation("District");
+
                     b.Navigation("Owner");
+
+                    b.Navigation("Province");
                 });
 
             modelBuilder.Entity("Personelim.Models.BusinessMember", b =>
@@ -214,6 +286,17 @@ namespace Personelim.Migrations
                     b.Navigation("Business");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Personelim.Models.District", b =>
+                {
+                    b.HasOne("Personelim.Models.Province", "Province")
+                        .WithMany("Districts")
+                        .HasForeignKey("ProvinceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Province");
                 });
 
             modelBuilder.Entity("Personelim.Models.Invitation", b =>
@@ -240,6 +323,11 @@ namespace Personelim.Migrations
                     b.Navigation("Invitations");
 
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("Personelim.Models.Province", b =>
+                {
+                    b.Navigation("Districts");
                 });
 
             modelBuilder.Entity("Personelim.Models.User", b =>

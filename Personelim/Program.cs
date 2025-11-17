@@ -9,6 +9,8 @@ using Personelim.Services.Invitation;
 using System.Text;
 using Personelim.Services.Location;
 using Personelim.Validators;
+using Personelim.Models;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,15 +19,12 @@ var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
 
 var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") 
     ?? builder.Configuration["Jwt:Key"];
-
 var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") 
     ?? builder.Configuration["Jwt:Issuer"];
-
 var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") 
     ?? builder.Configuration["Jwt:Audience"];
 
 builder.Services.AddControllers();
-
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
@@ -34,7 +33,6 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
-
 builder.Services.AddScoped<IBusinessValidator, BusinessValidator>();
 
 var key = Encoding.UTF8.GetBytes(jwtKey);
@@ -108,6 +106,110 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+// ✅ Migration ve Seed Data
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        
+        // Migration kontrol ve uygulama
+        var pendingMigrations = db.Database.GetPendingMigrations().ToList();
+        
+        if (pendingMigrations.Any())
+        {
+            Console.WriteLine($"⏳ {pendingMigrations.Count} migration uygulanıyor:");
+            foreach (var migration in pendingMigrations)
+            {
+                Console.WriteLine($"   - {migration}");
+            }
+            
+            db.Database.Migrate();
+            Console.WriteLine("✅ Tüm migration'lar başarıyla uygulandı!");
+        }
+        else
+        {
+            Console.WriteLine("✅ Database güncel - uygulanacak migration yok");
+        }
+        
+        // İl-İlçe verilerini kontrol et ve ekle
+        if (!db.Provinces.Any())
+        {
+            Console.WriteLine("⏳ İl-İlçe verileri API'den çekiliyor...");
+            
+            var httpClientFactory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+            var httpClient = httpClientFactory.CreateClient();
+            
+            try
+            {
+                var response = await httpClient.GetStringAsync("https://turkiyeapi.dev/api/v1/provinces");
+                var apiResponse = JsonSerializer.Deserialize<TurkeyApiResponse>(response);
+                
+                if (apiResponse?.Data != null && apiResponse.Data.Any())
+                {
+                    var provinceId = 1;
+                    var districtId = 1;
+                    
+                    foreach (var provinceData in apiResponse.Data)
+                    {
+                        var province = new Province 
+                        { 
+                            Id = provinceId,
+                            Name = provinceData.Name 
+                        };
+                        db.Provinces.Add(province);
+                        
+                        if (provinceData.Districts != null)
+                        {
+                            foreach (var districtData in provinceData.Districts)
+                            {
+                                db.Districts.Add(new District
+                                {
+                                    Id = districtId++,
+                                    Name = districtData.Name,
+                                    ProvinceId = provinceId
+                                });
+                            }
+                        }
+                        
+                        provinceId++;
+                    }
+                    
+                    await db.SaveChangesAsync();
+                    Console.WriteLine($"✅ {apiResponse.Data.Count} il ve {districtId - 1} ilçe eklendi!");
+                }
+                else
+                {
+                    Console.WriteLine("⚠️ API'den veri alınamadı");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ İl-İlçe API hatası: {ex.Message}");
+                Console.WriteLine("   Uygulama çalışmaya devam edecek ancak il-ilçe verileri eksik olabilir.");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"✅ İl-İlçe verileri mevcut ({db.Provinces.Count()} il, {db.Districts.Count()} ilçe)");
+        }
+        
+        // Uygulanan migration'ları göster
+        var appliedMigrations = db.Database.GetAppliedMigrations().ToList();
+        Console.WriteLine($"📊 Toplam {appliedMigrations.Count} migration uygulanmış");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Başlatma hatası: {ex.Message}");
+        if (ex.InnerException != null)
+        {
+            Console.WriteLine($"❌ Inner Exception: {ex.InnerException.Message}");
+        }
+        
+        throw; // Migration başarısız olursa uygulama başlamasın
+    }
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -117,22 +219,24 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-using (var scope = app.Services.CreateScope())
+app.Run();
+
+// API Response Models
+public class TurkeyApiResponse
 {
-    try
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
-        Console.WriteLine("🔄 Database migration kontrol ediliyor...");
-        db.Database.Migrate();
-        Console.WriteLine("✅ Database migration başarılı");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ Migration hatası: {ex.Message}");
-        Console.WriteLine($"❌ Inner Exception: {ex.InnerException?.Message}");
-       
-    }
+    public string Status { get; set; }
+    public List<TurkeyProvinceData> Data { get; set; }
 }
 
-app.Run();
+public class TurkeyProvinceData
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public List<TurkeyDistrictData> Districts { get; set; }
+}
+
+public class TurkeyDistrictData
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+}

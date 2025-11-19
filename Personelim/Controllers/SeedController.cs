@@ -24,7 +24,6 @@ namespace Personelim.Controllers
         {
             try
             {
-                // Zaten veri varsa uyarı ver
                 if (_context.Provinces.Any())
                 {
                     return BadRequest(new 
@@ -162,8 +161,7 @@ namespace Personelim.Controllers
             });
         }
     }
-
-    // API Response Models
+    
     public class TurkeyApiResponse
     {
         [System.Text.Json.Serialization.JsonPropertyName("status")]

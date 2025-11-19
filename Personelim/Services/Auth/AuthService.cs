@@ -7,6 +7,7 @@ using Personelim.Models;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Personelim.Services.Email;
 
 namespace Personelim.Services.Auth
 {
@@ -14,59 +15,90 @@ namespace Personelim.Services.Auth
     {
         private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
+        private readonly  IEmailService _emailService;
 
-        public AuthService(AppDbContext context, IConfiguration configuration)
+        public AuthService(
+            AppDbContext context, 
+            IConfiguration configuration,
+            IEmailService emailService)
         {
             _context = context;
             _configuration = configuration;
+            _emailService = emailService;
         }
 
         public async Task<ServiceResponse<AuthResponse>> RegisterAsync(RegisterRequest request)
+{
+    try
+    {
+        var existingUser = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower());
+
+        if (existingUser != null)
         {
-            try
+            if (!existingUser.IsActive)
             {
-                // Email kontrolü
-                var emailExists = await _context.Users.AnyAsync(u => u.Email == request.Email.ToLower());
-                if (emailExists)
-                {
-                    return ServiceResponse<AuthResponse>.ErrorResult("Bu email adresi zaten kayıtlı");
-                }
+                existingUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+                existingUser.FirstName = request.FirstName;
+                existingUser.LastName = request.LastName;
+                existingUser.PhoneNumber = request.PhoneNumber;
+                existingUser.IsActive = true;
+                existingUser.UpdatedAt = DateTime.UtcNow;
+                existingUser.LastLoginAt = null;
 
-                // Şifre hash
-                var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-
-                // Kullanıcı oluştur
-                var user = new User
-                {
-                    Email = request.Email.ToLower(),
-                    PasswordHash = passwordHash,
-                    FirstName = request.FirstName,
-                    LastName = request.LastName,
-                    PhoneNumber = request.PhoneNumber
-                };
-
-                _context.Users.Add(user);
                 await _context.SaveChangesAsync();
+                
+                var reactivatedToken = GenerateJwtToken(existingUser);
 
-                // Token oluştur
-                var token = GenerateJwtToken(user);
-
-                var response = new AuthResponse
+                var reactivatedResponse = new AuthResponse
                 {
-                    UserId = user.Id,
-                    Email = user.Email,
-                    FullName = user.GetFullName(),
-                    Token = token.Token,
-                    ExpiresAt = token.ExpiresAt
+                    UserId = existingUser.Id,
+                    Email = existingUser.Email,
+                    FullName = existingUser.GetFullName(),
+                    Token = reactivatedToken.Token,
+                    ExpiresAt = reactivatedToken.ExpiresAt
                 };
 
-                return ServiceResponse<AuthResponse>.SuccessResult(response, "Kayıt başarılı");
+                return ServiceResponse<AuthResponse>.SuccessResult(reactivatedResponse, "Kayıt başarılı");
             }
-            catch (Exception ex)
+            else
             {
-                return ServiceResponse<AuthResponse>.ErrorResult("Kayıt sırasında hata oluştu", ex.Message);
+                return ServiceResponse<AuthResponse>.ErrorResult("Bu email adresi zaten kayıtlı");
             }
         }
+        
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
+        var user = new User
+        {
+            Email = request.Email.ToLower(),
+            PasswordHash = passwordHash,
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            PhoneNumber = request.PhoneNumber
+        };
+
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+        
+        var token = GenerateJwtToken(user);
+
+        var response = new AuthResponse
+        {
+            UserId = user.Id,
+            Email = user.Email,
+            FullName = user.GetFullName(),
+            Token = token.Token,
+            ExpiresAt = token.ExpiresAt
+        };
+
+        return ServiceResponse<AuthResponse>.SuccessResult(response, "Kayıt başarılı");
+    }
+    catch (Exception ex)
+    {
+        return ServiceResponse<AuthResponse>.ErrorResult("Kayıt sırasında hata oluştu", ex.Message);
+    }
+}
 
         public async Task<ServiceResponse<AuthResponse>> LoginAsync(LoginRequest request)
         {
@@ -75,27 +107,19 @@ namespace Personelim.Services.Auth
                 var user = await _context.Users
                     .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower());
 
-                if (user == null)
+                if (user == null || !user.IsActive)
                 {
                     return ServiceResponse<AuthResponse>.ErrorResult("Email veya şifre hatalı");
                 }
 
-                // Şifre kontrolü
                 if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
                 {
                     return ServiceResponse<AuthResponse>.ErrorResult("Email veya şifre hatalı");
                 }
-
-                if (!user.IsActive)
-                {
-                    return ServiceResponse<AuthResponse>.ErrorResult("Hesabınız aktif değil");
-                }
-
-                // Son giriş güncelle
+                
                 user.LastLoginAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                // Token oluştur
                 var token = GenerateJwtToken(user);
 
                 var response = new AuthResponse
@@ -112,6 +136,240 @@ namespace Personelim.Services.Auth
             catch (Exception ex)
             {
                 return ServiceResponse<AuthResponse>.ErrorResult("Giriş sırasında hata oluştu", ex.Message);
+            }
+        }
+
+        public async Task<ServiceResponse<UserProfileResponse>> GetUserProfileAsync(Guid userId)
+        {
+            try
+            {
+                var user = await _context.Users
+                    .Include(u => u.BusinessMemberships)
+                    .Include(u => u.OwnedBusinesses)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+
+                if (user == null)
+                {
+                    return ServiceResponse<UserProfileResponse>.ErrorResult("Kullanıcı bulunamadı");
+                }
+
+                var response = new UserProfileResponse
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    FullName = user.GetFullName(),
+                    PhoneNumber = user.PhoneNumber,
+                    CreatedAt = user.CreatedAt,
+                    LastLoginAt = user.LastLoginAt,
+                    BusinessCount = user.BusinessMemberships.Count(bm => bm.IsActive),
+                    OwnedBusinessCount = user.OwnedBusinesses.Count(b => b.IsActive)
+                };
+
+                return ServiceResponse<UserProfileResponse>.SuccessResult(response);
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<UserProfileResponse>.ErrorResult(
+                    "Profil bilgisi getirilirken hata oluştu",
+                    ex.Message
+                );
+            }
+        }
+
+        public async Task<ServiceResponse<UserProfileResponse>> UpdateUserProfileAsync(Guid userId, UpdateUserProfileRequest request)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(userId);
+
+                if (user == null)
+                {
+                    return ServiceResponse<UserProfileResponse>.ErrorResult("Kullanıcı bulunamadı");
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Email) && request.Email.ToLower() != user.Email)
+                {
+                    var emailExists = await _context.Users
+                        .AnyAsync(u => u.Email == request.Email.ToLower() && u.Id != userId);
+
+                    if (emailExists)
+                    {
+                        return ServiceResponse<UserProfileResponse>.ErrorResult("Bu email adresi zaten kullanılıyor");
+                    }
+
+                    user.Email = request.Email.ToLower();
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.FirstName))
+                {
+                    user.FirstName = request.FirstName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.LastName))
+                {
+                    user.LastName = request.LastName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+                {
+                    user.PhoneNumber = request.PhoneNumber;
+                }
+
+                user.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                var response = new UserProfileResponse
+                {
+                    Id = user.Id,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    FullName = user.GetFullName(),
+                    PhoneNumber = user.PhoneNumber,
+                    CreatedAt = user.CreatedAt,
+                    LastLoginAt = user.LastLoginAt
+                };
+
+                return ServiceResponse<UserProfileResponse>.SuccessResult(response, "Profil başarıyla güncellendi");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<UserProfileResponse>.ErrorResult(
+                    "Profil güncellenirken hata oluştu",
+                    ex.Message
+                );
+            }
+        }
+
+        public async Task<ServiceResponse<bool>> ChangePasswordAsync(Guid userId, ChangePasswordRequest request)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(userId);
+
+                if (user == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Kullanıcı bulunamadı");
+                }
+
+                if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
+                {
+                    return ServiceResponse<bool>.ErrorResult("Mevcut şifre hatalı");
+                }
+
+                if (request.NewPassword != request.ConfirmPassword)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Yeni şifreler eşleşmiyor");
+                }
+
+                if (request.NewPassword.Length < 6)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Şifre en az 6 karakter olmalıdır");
+                }
+
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+                user.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                return ServiceResponse<bool>.SuccessResult(true, "Şifre başarıyla değiştirildi");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<bool>.ErrorResult(
+                    "Şifre değiştirilirken hata oluştu",
+                    ex.Message
+                );
+            }
+        }
+        
+        public async Task<ServiceResponse<bool>> LogoutAsync(Guid userId)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(userId);
+
+                if (user == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Kullanıcı bulunamadı");
+                }
+
+                return ServiceResponse<bool>.SuccessResult(true, "Çıkış başarılı");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<bool>.ErrorResult(
+                    "Çıkış yapılırken hata oluştu",
+                    ex.Message
+                );
+            }
+        }
+
+        public async Task<ServiceResponse<bool>> DeleteUserAsync(Guid userId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _context.Users
+                    .Include(u => u.OwnedBusinesses)
+                    .Include(u => u.BusinessMemberships)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
+
+                if (user == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Kullanıcı bulunamadı");
+                }
+
+                int affectedRecords = 0;
+
+                // Kullanıcının sahip olduğu şirketleri pasif yap
+                var ownedBusinesses = await _context.Businesses
+                    .Where(b => b.OwnerId == userId && b.IsActive)
+                    .ToListAsync();
+
+                foreach (var business in ownedBusinesses)
+                {
+                    business.IsActive = false;
+                    business.UpdatedAt = DateTime.UtcNow;
+                    affectedRecords++;
+                }
+
+                // Kullanıcının üye olduğu şirket üyeliklerini pasif yap
+                var memberships = await _context.BusinessMembers
+                    .Where(bm => bm.UserId == userId && bm.IsActive)
+                    .ToListAsync();
+
+                foreach (var membership in memberships)
+                {
+                    membership.IsActive = false;
+                    membership.UpdatedAt = DateTime.UtcNow;
+                    affectedRecords++;
+                }
+
+                // Kullanıcıyı pasif yap (soft delete)
+                user.IsActive = false;
+                user.UpdatedAt = DateTime.UtcNow;
+                affectedRecords++;
+
+                // Değişiklikleri kaydet
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ServiceResponse<bool>.SuccessResult(
+                    true, 
+                    $"Hesabınız başarıyla silindi. {affectedRecords} kayıt güncellendi."
+                );
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ServiceResponse<bool>.ErrorResult(
+                    "Hesap silinirken hata oluştu",
+                    ex.Message
+                );
             }
         }
 
@@ -140,44 +398,179 @@ namespace Personelim.Services.Auth
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return (tokenHandler.WriteToken(token), expiresAt);
         }
-        
-        public async Task<ServiceResponse<UserProfileResponse>> GetUserProfileAsync(Guid userId)
+         public async Task<ServiceResponse<ForgotPasswordResponse>> ForgotPasswordAsync(ForgotPasswordRequest request)
         {
             try
             {
                 var user = await _context.Users
-                    .Include(u => u.BusinessMemberships)
-                    .Include(u => u.OwnedBusinesses)
-                    .FirstOrDefaultAsync(u => u.Id == userId);
-        
+                    .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower() && u.IsActive);
+
                 if (user == null)
                 {
-                    return ServiceResponse<UserProfileResponse>.ErrorResult("Kullanıcı bulunamadı");
+                    // Güvenlik için her zaman başarılı mesaj döndür
+                    return ServiceResponse<ForgotPasswordResponse>.SuccessResult(
+                        new ForgotPasswordResponse 
+                        { 
+                            Email = request.Email,
+                            ExpiresAt = DateTime.UtcNow.AddMinutes(15),
+                            ExpiresInMinutes = 15
+                        },
+                        "Eğer bu email kayıtlıysa, şifre sıfırlama kodu gönderildi"
+                    );
                 }
-        
-                var response = new UserProfileResponse
+
+                // Eski aktif tokenları pasif yap
+                var oldTokens = await _context.PasswordResetTokens
+                    .Where(t => t.UserId == user.Id && !t.IsUsed && t.ExpiresAt > DateTime.UtcNow)
+                    .ToListAsync();
+
+                foreach (var token in oldTokens)
                 {
-                    Id = user.Id,
-                    Email = user.Email,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
-                    FullName = user.GetFullName(),
-                    PhoneNumber = user.PhoneNumber,
-                    CreatedAt = user.CreatedAt,
-                    LastLoginAt = user.LastLoginAt,
-                    BusinessCount = user.BusinessMemberships.Count(bm => bm.IsActive),
-                    OwnedBusinessCount = user.OwnedBusinesses.Count(b => b.IsActive)
+                    token.IsUsed = true;
+                    token.UsedAt = DateTime.UtcNow;
+                }
+
+                // Yeni 6 haneli kod oluştur
+                var code = GenerateRandomCode();
+                var expiresAt = DateTime.UtcNow.AddMinutes(15);
+
+                var resetToken = new PasswordResetToken
+                {
+                    UserId = user.Id,
+                    Code = code,
+                    ExpiresAt = expiresAt
                 };
-        
-                return ServiceResponse<UserProfileResponse>.SuccessResult(response);
+
+                _context.PasswordResetTokens.Add(resetToken);
+                await _context.SaveChangesAsync();
+
+                // Email gönder
+                var emailSent = await _emailService.SendPasswordResetCodeAsync(
+                    user.Email, 
+                    code, 
+                    user.GetFullName()
+                );
+
+                if (!emailSent)
+                {
+                    return ServiceResponse<ForgotPasswordResponse>.ErrorResult(
+                        "Email gönderilemedi, lütfen daha sonra tekrar deneyiniz"
+                    );
+                }
+
+                var response = new ForgotPasswordResponse
+                {
+                    Email = user.Email,
+                    ExpiresAt = expiresAt,
+                    ExpiresInMinutes = 15
+                };
+
+                return ServiceResponse<ForgotPasswordResponse>.SuccessResult(
+                    response,
+                    "Şifre sıfırlama kodu email adresinize gönderildi"
+                );
             }
             catch (Exception ex)
             {
-                return ServiceResponse<UserProfileResponse>.ErrorResult(
-                    "Profil bilgisi getirilirken hata oluştu", 
+                return ServiceResponse<ForgotPasswordResponse>.ErrorResult(
+                    "İşlem sırasında hata oluştu",
                     ex.Message
                 );
             }
+        }
+
+        public async Task<ServiceResponse<bool>> VerifyResetCodeAsync(VerifyResetCodeRequest request)
+        {
+            try
+            {
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower() && u.IsActive);
+
+                if (user == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Geçersiz kod");
+                }
+
+                var token = await _context.PasswordResetTokens
+                    .FirstOrDefaultAsync(t => 
+                        t.UserId == user.Id && 
+                        t.Code == request.Code && 
+                        !t.IsUsed && 
+                        t.ExpiresAt > DateTime.UtcNow
+                    );
+
+                if (token == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Geçersiz veya süresi dolmuş kod");
+                }
+
+                return ServiceResponse<bool>.SuccessResult(true, "Kod doğrulandı");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<bool>.ErrorResult(
+                    "Kod doğrulama sırasında hata oluştu",
+                    ex.Message
+                );
+            }
+        }
+
+        public async Task<ServiceResponse<bool>> ResetPasswordAsync(ResetPasswordRequest request)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower() && u.IsActive);
+
+                if (user == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Geçersiz işlem");
+                }
+
+                var token = await _context.PasswordResetTokens
+                    .FirstOrDefaultAsync(t => 
+                        t.UserId == user.Id && 
+                        t.Code == request.Code && 
+                        !t.IsUsed && 
+                        t.ExpiresAt > DateTime.UtcNow
+                    );
+
+                if (token == null)
+                {
+                    return ServiceResponse<bool>.ErrorResult("Geçersiz veya süresi dolmuş kod");
+                }
+
+                // Şifreyi güncelle
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+                user.UpdatedAt = DateTime.UtcNow;
+
+                // Token'ı kullanılmış olarak işaretle
+                token.IsUsed = true;
+                token.UsedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return ServiceResponse<bool>.SuccessResult(
+                    true,
+                    "Şifreniz başarıyla değiştirildi"
+                );
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return ServiceResponse<bool>.ErrorResult(
+                    "Şifre sıfırlama sırasında hata oluştu",
+                    ex.Message
+                );
+            }
+        }
+
+        private string GenerateRandomCode()
+        {
+            var random = new Random();
+            return random.Next(100000, 999999).ToString();
         }
     }
 }

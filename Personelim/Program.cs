@@ -11,6 +11,7 @@ using Personelim.Services.Location;
 using Personelim.Validators;
 using Personelim.Models;
 using System.Text.Json;
+using Personelim.Services.Email;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +35,7 @@ builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IBusinessValidator, BusinessValidator>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 var key = Encoding.UTF8.GetBytes(jwtKey);
 builder.Services.AddAuthentication(options =>
@@ -132,7 +134,6 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine("✅ Database güncel - uygulanacak migration yok");
         }
         
-        // İl-İlçe verilerini kontrol et ve ekle
         if (!db.Provinces.Any())
         {
             Console.WriteLine("⏳ İl-İlçe verileri API'den çekiliyor...");
@@ -206,7 +207,7 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine($"❌ Inner Exception: {ex.InnerException.Message}");
         }
         
-        throw; // Migration başarısız olursa uygulama başlamasın
+        throw; 
     }
 }
 
@@ -221,7 +222,6 @@ app.MapControllers();
 
 app.Run();
 
-// API Response Models
 public class TurkeyApiResponse
 {
     public string Status { get; set; }

@@ -12,8 +12,7 @@ namespace Personelim.Models
         public bool IsActive { get; set; }
         public DateTime JoinedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
-
-        // Navigation Properties
+        
         public User? User { get; set; }
         public Business? Business { get; set; }
 

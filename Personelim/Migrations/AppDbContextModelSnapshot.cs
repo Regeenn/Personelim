@@ -30,13 +30,15 @@ namespace Personelim.Migrations
 
                     b.Property<string>("Address")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
-                        .HasColumnType("text");
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<int>("DistrictId")
                         .HasColumnType("integer");
@@ -52,9 +54,13 @@ namespace Personelim.Migrations
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ParentBusinessId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<int>("ProvinceId")
                         .HasColumnType("integer");
@@ -62,18 +68,15 @@ namespace Personelim.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
 
                     b.HasIndex("DistrictId");
 
                     b.HasIndex("OwnerId");
 
-                    b.HasIndex("ProvinceId");
+                    b.HasIndex("ParentBusinessId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("ProvinceId");
 
                     b.ToTable("Businesses");
                 });
@@ -212,6 +215,9 @@ namespace Personelim.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Code")
+                        .IsUnique();
+
                     b.HasIndex("UserId");
 
                     b.ToTable("PasswordResetTokens");
@@ -289,10 +295,15 @@ namespace Personelim.Migrations
                         .IsRequired();
 
                     b.HasOne("Personelim.Models.User", "Owner")
-                        .WithMany()
+                        .WithMany("OwnedBusinesses")
                         .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Personelim.Models.Business", "ParentBusiness")
+                        .WithMany("SubBusinesses")
+                        .HasForeignKey("ParentBusinessId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Personelim.Models.Province", "Province")
                         .WithMany()
@@ -300,13 +311,11 @@ namespace Personelim.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("Personelim.Models.User", null)
-                        .WithMany("OwnedBusinesses")
-                        .HasForeignKey("UserId");
-
                     b.Navigation("District");
 
                     b.Navigation("Owner");
+
+                    b.Navigation("ParentBusiness");
 
                     b.Navigation("Province");
                 });
@@ -316,13 +325,13 @@ namespace Personelim.Migrations
                     b.HasOne("Personelim.Models.Business", "Business")
                         .WithMany("Members")
                         .HasForeignKey("BusinessId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Personelim.Models.User", "User")
                         .WithMany("BusinessMemberships")
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Business");
@@ -376,6 +385,8 @@ namespace Personelim.Migrations
                     b.Navigation("Invitations");
 
                     b.Navigation("Members");
+
+                    b.Navigation("SubBusinesses");
                 });
 
             modelBuilder.Entity("Personelim.Models.Province", b =>

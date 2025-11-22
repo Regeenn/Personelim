@@ -65,5 +65,21 @@ namespace Personelim.Controllers
 
             return Ok(result);
         }
+        [HttpPut("cancel/{invitationId}")]
+        public async Task<IActionResult> CancelInvitation(Guid invitationId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+                return Unauthorized("Token içinde User ID bulunamadı");
+
+            var userId = Guid.Parse(userIdClaim.Value);
+            
+            var result = await _invitationService.CancelInvitationAsync(userId, invitationId);
+
+            if (!result.Success)
+                return BadRequest(result);
+            
+            return Ok(result);
+        }
     }
 }

@@ -8,5 +8,6 @@ namespace Personelim.Services.Invitation
         Task<ServiceResponse<InvitationResponse>> SendInvitationAsync(Guid userId, SendInvitationRequest request);
         Task<ServiceResponse<string>> AcceptInvitationAsync(Guid userId, string invitationCode);
         Task<ServiceResponse<List<InvitationResponse>>> GetUserInvitationsAsync(string email);
+        Task<ServiceResponse<string>> CancelInvitationAsync(Guid userId, Guid invitationId);
     }
 }

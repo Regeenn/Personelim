@@ -103,6 +103,12 @@ namespace Personelim.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("Salary")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("TCIdentityNumber")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -185,6 +191,82 @@ namespace Personelim.Migrations
                     b.HasIndex("InvitedByUserId");
 
                     b.ToTable("Invitations");
+                });
+
+            modelBuilder.Entity("Personelim.Models.MemberDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BusinessMemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FileExtension")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessMemberId");
+
+                    b.ToTable("MemberDocuments");
+                });
+
+            modelBuilder.Entity("Personelim.Models.MemberLeave", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BusinessMemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("EndDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessMemberId");
+
+                    b.ToTable("MemberLeaves");
                 });
 
             modelBuilder.Entity("Personelim.Models.PasswordResetToken", b =>
@@ -369,6 +451,28 @@ namespace Personelim.Migrations
                     b.Navigation("InvitedBy");
                 });
 
+            modelBuilder.Entity("Personelim.Models.MemberDocument", b =>
+                {
+                    b.HasOne("Personelim.Models.BusinessMember", "BusinessMember")
+                        .WithMany("Documents")
+                        .HasForeignKey("BusinessMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessMember");
+                });
+
+            modelBuilder.Entity("Personelim.Models.MemberLeave", b =>
+                {
+                    b.HasOne("Personelim.Models.BusinessMember", "BusinessMember")
+                        .WithMany()
+                        .HasForeignKey("BusinessMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BusinessMember");
+                });
+
             modelBuilder.Entity("Personelim.Models.PasswordResetToken", b =>
                 {
                     b.HasOne("Personelim.Models.User", "User")
@@ -387,6 +491,11 @@ namespace Personelim.Migrations
                     b.Navigation("Members");
 
                     b.Navigation("SubBusinesses");
+                });
+
+            modelBuilder.Entity("Personelim.Models.BusinessMember", b =>
+                {
+                    b.Navigation("Documents");
                 });
 
             modelBuilder.Entity("Personelim.Models.Province", b =>

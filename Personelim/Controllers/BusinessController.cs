@@ -129,6 +129,23 @@ namespace Personelim.Controllers
             return Ok(result);
         }
         
+        [HttpGet("{parentBusinessId}/sub-businesses/{subBusinessId}")]
+        public async Task<IActionResult> GetSubBusinessById(Guid parentBusinessId, Guid subBusinessId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null) 
+                return Unauthorized();
+    
+            var userId = Guid.Parse(userIdClaim.Value);
+
+            var result = await _businessService.GetSubBusinessByIdAsync(userId, parentBusinessId, subBusinessId);
+    
+            if (!result.Success)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+        
         [HttpPost("{parentBusinessId}/sub-businesses")]
         public async Task<IActionResult> CreateSubBusiness(Guid parentBusinessId, [FromBody] CreateBusinessRequest request)
         {

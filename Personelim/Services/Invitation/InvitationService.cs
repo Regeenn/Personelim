@@ -149,7 +149,7 @@ namespace Personelim.Services.Invitation
                 }
 
                 // Üyelik oluştur
-                var membership = new BusinessMember
+                var membership = new Models.BusinessMember
                 {
                     UserId = userId,
                     BusinessId = invitation.BusinessId,

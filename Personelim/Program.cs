@@ -12,6 +12,7 @@ using Personelim.Validators;
 using Personelim.Models;
 using System.Text.Json;
 using Personelim.Services.Email;
+using Personelim.Services.Leave;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +37,7 @@ builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IBusinessValidator, BusinessValidator>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<ILeaveService, LeaveService>();
 
 var key = Encoding.UTF8.GetBytes(jwtKey);
 builder.Services.AddAuthentication(options =>
@@ -108,7 +110,6 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-// ✅ Migration ve Seed Data
 using (var scope = app.Services.CreateScope())
 {
     try
@@ -216,6 +217,7 @@ app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Personelim.Data;
 using Personelim.DTOs.Business;
 using Personelim.Helpers;
-using Personelim.Models;
 using Personelim.Models.Enums;
 using Personelim.Validators;
 
@@ -22,15 +21,14 @@ namespace Personelim.Services.Business
         public async Task<ServiceResponse<BusinessResponse>> CreateBusinessAsync(
     Guid userId, 
     CreateBusinessRequest request, 
-    Guid? parentBusinessId = null) // ← Opsiyonel parametre
+    Guid? parentBusinessId = null) 
 {
     var validationResult = await _validator.ValidateCreateBusinessAsync(request);
     if (!validationResult.Success)
     {
         return ServiceResponse<BusinessResponse>.ErrorResult(validationResult.Message);
     }
-
-    // Eğer alt işletme oluşturuluyorsa, ana işletme kontrolü
+    
     if (parentBusinessId.HasValue)
     {
         var parentBusiness = await _context.Businesses
@@ -69,13 +67,13 @@ namespace Personelim.Services.Business
             ProvinceId = request.ProvinceId,
             DistrictId = request.DistrictId,
             OwnerId = userId,
-            ParentBusinessId = parentBusinessId // ← Burada set ediliyor
+            ParentBusinessId = parentBusinessId 
         };
 
         _context.Businesses.Add(business);
         await _context.SaveChangesAsync();
 
-        var ownerMembership = new BusinessMember
+        var ownerMembership = new Models.BusinessMember
         {
             UserId = userId,
             BusinessId = business.Id,
@@ -476,11 +474,90 @@ namespace Personelim.Services.Business
                 );
             }
         }
+        
+        public async Task<ServiceResponse<BusinessResponse>> GetSubBusinessByIdAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId)
+{
+    try
+    {
+        // 1. İstenen alt işletmeyi ve ilişkili verileri çek
+        var subBusiness = await _context.Businesses
+            .Include(b => b.Province)
+            .Include(b => b.District)
+            .Include(b => b.Members)
+            .Include(b => b.ParentBusiness)
+            .FirstOrDefaultAsync(b => b.Id == subBusinessId 
+                                   && b.ParentBusinessId == parentBusinessId 
+                                   && b.IsActive);
+
+        if (subBusiness == null)
+        {
+            return ServiceResponse<BusinessResponse>.ErrorResult("Alt işletme bulunamadı veya belirtilen ana işletmeye ait değil.");
+        }
+
+        // 2. Yetki Kontrolü:
+        // Kullanıcı Ana İşletmenin üyesi mi?
+        var hasParentAccess = await _context.BusinessMembers
+            .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive);
+        
+        // VEYA Kullanıcı direkt bu Alt İşletmenin bir üyesi mi?
+        var subMemberInfo = subBusiness.Members.FirstOrDefault(m => m.UserId == userId && m.IsActive);
+        var hasSubAccess = subMemberInfo != null;
+
+        if (!hasParentAccess && !hasSubAccess)
+        {
+            return ServiceResponse<BusinessResponse>.ErrorResult("Bu alt işletmeyi görüntüleme yetkiniz yok.");
+        }
+        
+        string userRole = "Viewer";
+        if (hasSubAccess)
+        {
+            userRole = subMemberInfo.Role.ToString();
+        }
+        else if (hasParentAccess)
+        {
+            // Ana işletmedeki rolünü bulalım
+            var parentRole = await _context.BusinessMembers
+                .Where(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId)
+                .Select(bm => bm.Role)
+                .FirstOrDefaultAsync();
+            userRole = parentRole.ToString() + " (Ana İşletme)";
+        }
+
+        
+        var response = new BusinessResponse
+        {
+            Id = subBusiness.Id,
+            Name = subBusiness.Name,
+            Description = subBusiness.Description,
+            Address = subBusiness.Address,
+            PhoneNumber = subBusiness.PhoneNumber,
+            ProvinceId = subBusiness.ProvinceId,
+            ProvinceName = subBusiness.Province.Name,
+            DistrictId = subBusiness.DistrictId,
+            DistrictName = subBusiness.District.Name,
+            Role = userRole,
+            MemberCount = subBusiness.Members.Count(m => m.IsActive),
+            CreatedAt = subBusiness.CreatedAt,
+            ParentBusinessId = subBusiness.ParentBusinessId,
+            ParentBusinessName = subBusiness.ParentBusiness?.Name,
+            IsSubBusiness = true,
+            SubBusinessCount = 0
+        };
+
+        return ServiceResponse<BusinessResponse>.SuccessResult(response);
+    }
+    catch (Exception ex)
+    {
+        return ServiceResponse<BusinessResponse>.ErrorResult(
+            "Alt işletme detayı getirilirken hata oluştu",
+            ex.Message
+        );
+    }
+}
         public async Task<ServiceResponse<BusinessResponse>> UpdateSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId, UpdateBusinessRequest request)
 {
     try
     {
-        // Alt işletmenin varlığını ve ana işletme ilişkisini kontrol et
         var subBusiness = await _context.Businesses
             .Include(b => b.Province)
             .Include(b => b.District)
@@ -493,15 +570,13 @@ namespace Personelim.Services.Business
         {
             return ServiceResponse<BusinessResponse>.ErrorResult("Alt işletme bulunamadı veya bu ana işletmeye ait değil");
         }
-
-        // Kullanıcının ana işletmede Owner olup olmadığını kontrol et
+        
         var isParentOwner = await _context.BusinessMembers
             .AnyAsync(bm => bm.UserId == userId 
                          && bm.BusinessId == parentBusinessId 
                          && bm.IsActive 
                          && bm.Role == UserRole.Owner);
-
-        // Veya kullanıcının alt işletmede Owner olup olmadığını kontrol et
+        
         var isSubBusinessOwner = await _context.BusinessMembers
             .AnyAsync(bm => bm.UserId == userId 
                          && bm.BusinessId == subBusinessId 
@@ -513,8 +588,7 @@ namespace Personelim.Services.Business
             return ServiceResponse<BusinessResponse>.ErrorResult(
                 "Alt işletmeyi güncelleme yetkiniz yok. Ana işletme sahibi veya alt işletme sahibi olmanız gerekir.");
         }
-
-        // İsim güncellemesi
+        
         if (!string.IsNullOrWhiteSpace(request.Name))
         {
             var nameExists = await _context.Businesses
@@ -529,14 +603,12 @@ namespace Personelim.Services.Business
 
             subBusiness.Name = request.Name.Trim();
         }
-
-        // Açıklama güncellemesi
+        
         if (request.Description != null)
         {
             subBusiness.Description = request.Description.Trim();
         }
-
-        // Adres güncellemesi
+        
         if (!string.IsNullOrWhiteSpace(request.Address))
         {
             if (request.Address.Length < 10)
@@ -545,8 +617,7 @@ namespace Personelim.Services.Business
             }
             subBusiness.Address = request.Address.Trim();
         }
-
-        // Telefon güncellemesi
+        
         if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
         {
             var cleanPhoneNumber = new string(request.PhoneNumber.Where(char.IsDigit).ToArray());
@@ -558,8 +629,7 @@ namespace Personelim.Services.Business
 
             subBusiness.PhoneNumber = request.PhoneNumber.Trim();
         }
-
-        // Şehir ve İlçe güncellemesi
+        
         if (request.ProvinceId.HasValue && request.DistrictId.HasValue)
         {
             var districtExists = await _context.Districts
@@ -572,8 +642,7 @@ namespace Personelim.Services.Business
 
             subBusiness.ProvinceId = request.ProvinceId.Value;
             subBusiness.DistrictId = request.DistrictId.Value;
-
-            // Province ve District'i yeniden yükle
+            
             await _context.Entry(subBusiness).Reference(b => b.Province).LoadAsync();
             await _context.Entry(subBusiness).Reference(b => b.District).LoadAsync();
         }

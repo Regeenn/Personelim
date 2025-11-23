@@ -48,7 +48,6 @@ namespace Personelim.Services.BusinessMember
                         IsActive = bm.IsActive
                        
                     })
-                    .OrderByDescending(x => x.Role) 
                     .ToListAsync();
 
                 return ServiceResponse<List<BusinessMemberResponse>>.SuccessResult(members);

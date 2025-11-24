@@ -177,6 +177,99 @@ namespace Personelim.Services.Email
                 </html>
             ";
         }
+
+        public async Task<bool> SendAccountCreatedEmailAsync(string email, string firstName, string plainPassword)
+        {
+            try
+            {
+                var smtpHost = _configuration["Email:SmtpHost"];
+                var smtpPort = int.Parse(_configuration["Email:SmtpPort"]);
+                var smtpUser = _configuration["Email:SmtpUser"];
+                var smtpPass = _configuration["Email:SmtpPass"];
+                var fromEmail = _configuration["Email:FromEmail"];
+                var fromName = _configuration["Email:FromName"];
+
+                using var client = new SmtpClient(smtpHost, smtpPort)
+                {
+                    Credentials = new NetworkCredential(smtpUser, smtpPass),
+                    EnableSsl = true
+                };
+
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(fromEmail, fromName),
+                    Subject = "Personelim Hesabınız Oluşturuldu",
+                    Body = GetAccountCreatedEmailBody(firstName, email, plainPassword),
+                    IsBodyHtml = true
+                };
+
+                mailMessage.To.Add(email);
+                await client.SendMailAsync(mailMessage);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Hesap oluşturma maili gönderimi başarısız: {Email}", email);
+                return false;
+            }
+        }
+
+        private string GetAccountCreatedEmailBody(string firstName, string email, string plainPassword)
+        {
+            return $@"
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }}
+                        .container {{ max-width: 600px; margin: 20px auto; padding: 30px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }}
+                        .header {{ text-align: center; padding-bottom: 20px; border-bottom: 2px solid #eee; }}
+                        .header h2 {{ color: #2c3e50; margin: 0; }}
+                        .content {{ padding: 30px 20px; text-align: center; }}
+                        .credentials-box {{ background-color: #eef2f5; border: 1px solid #dce1e6; border-radius: 8px; padding: 20px; margin: 25px 0; text-align: left; display: inline-block; min-width: 250px; }}
+                        .credential-item {{ margin-bottom: 10px; }}
+                        .credential-label {{ color: #7f8c8d; font-size: 0.9em; font-weight: 600; display: block; margin-bottom: 4px; }}
+                        .credential-value {{ color: #2c3e50; font-size: 1.1em; font-weight: 500; font-family: monospace; background: #fff; padding: 5px 10px; border-radius: 4px; border: 1px solid #eee; }}
+                        .password-value {{ color: #e74c3c; letter-spacing: 1px; }}
+                        .footer {{ margin-top: 30px; font-size: 12px; color: #95a5a6; text-align: center; border-top: 1px solid #eee; padding-top: 20px; }}
+                        .btn {{ display: inline-block; background-color: #3498db; color: white; padding: 12px 25px; text-decoration: none; border-radius: 25px; font-weight: bold; margin-top: 20px; }}
+                    </style>
+                </head>
+                <body>
+                    <div class='container'>
+                        <div class='header'>
+                            <h2>Hoşgeldiniz!</h2>
+                        </div>
+                        <div class='content'>
+                            <p>Sayın <strong>{firstName}</strong>,</p>
+                            <p>Personelim uygulamasındaki hesabınız yönetici tarafından başarıyla oluşturulmuştur.</p>
+                            
+                            <p>Aşağıdaki bilgileri kullanarak sisteme giriş yapabilir ve şirketinizi kurabilirsiniz:</p>
+                            
+                            <div class='credentials-box'>
+                                <div class='credential-item'>
+                                    <span class='credential-label'>E-posta Adresi:</span>
+                                    <div class='credential-value'>{email}</div>
+                                </div>
+                                <div class='credential-item' style='margin-bottom: 0;'>
+                                    <span class='credential-label'>Geçici Şifre:</span>
+                                    <div class='credential-value password-value'>{plainPassword}</div>
+                                </div>
+                            </div>
+                            
+                            <p style='color: #e74c3c; font-size: 0.9em;'>Güvenliğiniz için giriş yaptıktan sonra şifrenizi değiştirmenizi öneririz.</p>
+                        </div>
+                        
+                        <div class='footer'>
+                            <p>Bu otomatik bir bilgilendirme e-postasıdır.</p>
+                            <p>&copy; 2024 Personelim</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            ";
+        }
     }
 }
     

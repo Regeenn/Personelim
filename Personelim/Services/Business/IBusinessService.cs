@@ -19,6 +19,7 @@ namespace Personelim.Services.Business
         Task<ServiceResponse<BusinessResponse>> UpdateSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId, UpdateBusinessRequest request);
         Task<ServiceResponse<bool>> DeleteSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId);
         Task<ServiceResponse<BusinessResponse>> GetSubBusinessByIdAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId);
-       
+        Task<ServiceResponse<BusinessResponse>> CreateLocationAsync(Guid userId, Guid parentBusinessId, CreateLocationRequest request);
+        Task<ServiceResponse<BusinessResponse>> UpdateSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId, UpdateLocationRequest request);
     }
 }

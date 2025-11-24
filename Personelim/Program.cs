@@ -11,6 +11,7 @@ using Personelim.Services.Location;
 using Personelim.Validators;
 using Personelim.Models;
 using System.Text.Json;
+using Personelim.Services.Admin;
 using Personelim.Services.BusinessMember;
 using Personelim.Services.Email;
 using Personelim.Services.Leave;
@@ -40,6 +41,7 @@ builder.Services.AddScoped<IBusinessValidator, BusinessValidator>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ILeaveService, LeaveService>();
 builder.Services.AddScoped<IBusinessMemberService, BusinessMemberService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 var key = Encoding.UTF8.GetBytes(jwtKey);
 builder.Services.AddAuthentication(options =>
 {

@@ -18,224 +18,111 @@ namespace Personelim.Services.Business
             _validator = validator;
         }
 
-        public async Task<ServiceResponse<BusinessResponse>> CreateBusinessAsync(
-    Guid userId, 
-    CreateBusinessRequest request, 
-    Guid? parentBusinessId = null) 
-{
-    var validationResult = await _validator.ValidateCreateBusinessAsync(request);
-    if (!validationResult.Success)
-    {
-        return ServiceResponse<BusinessResponse>.ErrorResult(validationResult.Message);
-    }
-    
-    if (parentBusinessId.HasValue)
-    {
-        var parentBusiness = await _context.Businesses
-            .Include(b => b.Members)
-            .FirstOrDefaultAsync(b => b.Id == parentBusinessId.Value && b.IsActive);
-
-        if (parentBusiness == null)
+        public async Task<ServiceResponse<BusinessResponse>> CreateBusinessAsync(Guid userId, CreateBusinessRequest request, Guid? parentBusinessId = null)
         {
-            return ServiceResponse<BusinessResponse>.ErrorResult("Ana işletme bulunamadı");
-        }
-
-        var hasPermission = await _context.BusinessMembers
-            .AnyAsync(bm => bm.BusinessId == parentBusinessId.Value
-                         && bm.UserId == userId
-                         && bm.IsActive
-                         && bm.Role == UserRole.Owner);
-
-        if (!hasPermission)
-        {
-            return ServiceResponse<BusinessResponse>.ErrorResult("Ana işletmede alt işletme oluşturma yetkiniz yok. Sadece işletme sahipleri alt işletme oluşturabilir.");
-        }
-    }
-
-    using var transaction = await _context.Database.BeginTransactionAsync();
-    try
-    {
-        var province = await _context.Provinces.FindAsync(request.ProvinceId);
-        var district = await _context.Districts.FindAsync(request.DistrictId);
-
-        var business = new Models.Business
-        {
-            Name = request.Name.Trim(),
-            Description = request.Description?.Trim(),
-            Address = request.Address.Trim(),
-            PhoneNumber = request.PhoneNumber.Trim(),
-            ProvinceId = request.ProvinceId,
-            DistrictId = request.DistrictId,
-            OwnerId = userId,
-            ParentBusinessId = parentBusinessId 
-        };
-
-        _context.Businesses.Add(business);
-        await _context.SaveChangesAsync();
-
-        var ownerMembership = new Models.BusinessMember
-        {
-            UserId = userId,
-            BusinessId = business.Id,
-            Role = UserRole.Owner
-        };
-        _context.BusinessMembers.Add(ownerMembership);
-
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        var parentBusinessName = parentBusinessId.HasValue
-            ? await _context.Businesses
-                .Where(b => b.Id == parentBusinessId.Value)
-                .Select(b => b.Name)
-                .FirstOrDefaultAsync()
-            : null;
-
-        var response = new BusinessResponse
-        {
-            Id = business.Id,
-            Name = business.Name,
-            Description = business.Description,
-            Address = business.Address,
-            PhoneNumber = business.PhoneNumber,
-            ProvinceId = business.ProvinceId,
-            ProvinceName = province!.Name,
-            DistrictId = business.DistrictId,
-            DistrictName = district!.Name,
-            Role = "Owner",
-            MemberCount = 1,
-            CreatedAt = business.CreatedAt,
-            ParentBusinessId = business.ParentBusinessId,
-            ParentBusinessName = parentBusinessName,
-            IsSubBusiness = parentBusinessId.HasValue,
-            SubBusinessCount = 0
-        };
-
-        return ServiceResponse<BusinessResponse>.SuccessResult(
-            response,
-            parentBusinessId.HasValue
-                ? "Alt işletme başarıyla oluşturuldu"
-                : "İşletme başarıyla oluşturuldu"
-        );
-    }
-    catch (DbUpdateException dbEx)
-    {
-        await transaction.RollbackAsync();
-        return ServiceResponse<BusinessResponse>.ErrorResult(
-            "Database hatası",
-            dbEx.InnerException?.Message ?? dbEx.Message
-        );
-    }
-    catch (Exception ex)
-    {
-        await transaction.RollbackAsync();
-        return ServiceResponse<BusinessResponse>.ErrorResult(
-            "İşletme oluşturulurken hata oluştu",
-            ex.InnerException?.Message ?? ex.Message
-        );
-    }
-}
-
-        public async Task<ServiceResponse<List<BusinessResponse>>> GetUserBusinessesAsync(Guid userId)
-        {
-            try
+            var validationResult = await _validator.ValidateCreateBusinessAsync(request);
+            if (!validationResult.Success)
             {
-                var businesses = await _context.BusinessMembers
-                    .Where(bm => bm.UserId == userId && bm.IsActive)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.Members)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.Province)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.District)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.ParentBusiness)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.SubBusinesses)
-                    .Where(bm => bm.Business.IsActive)
-                    .Select(bm => new BusinessResponse
+                return ServiceResponse<BusinessResponse>.ErrorResult(validationResult.Message);
+            }
+
+            if (parentBusinessId.HasValue)
+            {
+                var parentBusiness = await _context.Businesses
+                    .FirstOrDefaultAsync(b => b.Id == parentBusinessId.Value && b.IsActive);
+
+                if (parentBusiness == null) return ServiceResponse<BusinessResponse>.ErrorResult("Ana işletme bulunamadı");
+
+                var isOwner = await _context.BusinessMembers
+                    .AnyAsync(bm => bm.BusinessId == parentBusinessId.Value && bm.UserId == userId && bm.IsActive && bm.Role == UserRole.Owner);
+
+                if (!isOwner) return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon ekleme yetkiniz yok.");
+
+                try
+                {
+                    var newLocation = new Models.Business
                     {
-                        Id = bm.Business.Id,
-                        Name = bm.Business.Name,
-                        Description = bm.Business.Description,
-                        Address = bm.Business.Address,
-                        PhoneNumber = bm.Business.PhoneNumber,
-                        ProvinceId = bm.Business.ProvinceId,
-                        ProvinceName = bm.Business.Province.Name,
-                        DistrictId = bm.Business.DistrictId,
-                        DistrictName = bm.Business.District.Name,
-                        Role = bm.Role.ToString(),
-                        MemberCount = bm.Business.Members.Count(m => m.IsActive),
-                        CreatedAt = bm.Business.CreatedAt,
-                        ParentBusinessId = bm.Business.ParentBusinessId,
-                        ParentBusinessName = bm.Business.ParentBusiness != null ? bm.Business.ParentBusiness.Name : null,
-                        IsSubBusiness = bm.Business.ParentBusinessId.HasValue,
-                        SubBusinessCount = bm.Business.SubBusinesses.Count(sb => sb.IsActive)
-                    })
-                    .ToListAsync();
+                        ParentBusinessId = parentBusinessId,
+                        OwnerId = parentBusiness.OwnerId,
+                        LocationName = request.LocationName.Trim(),
+                        Latitude = request.Latitude,
+                        Longitude = request.Longitude,
+                        Name = parentBusiness.Name,
+                        Description = $"{parentBusiness.Name} - {request.LocationName}",
+                        Address = parentBusiness.Address,
+                        PhoneNumber = parentBusiness.PhoneNumber,
+                        ProvinceId = parentBusiness.ProvinceId,
+                        DistrictId = parentBusiness.DistrictId,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
 
-                return ServiceResponse<List<BusinessResponse>>.SuccessResult(businesses);
-            }
-            catch (Exception ex)
-            {
-                return ServiceResponse<List<BusinessResponse>>.ErrorResult(
-                    "İşletmeler getirilirken hata oluştu",
-                    ex.Message
-                );
-            }
-        }
+                    _context.Businesses.Add(newLocation);
+                    await _context.SaveChangesAsync();
 
-        public async Task<ServiceResponse<BusinessResponse>> GetBusinessByIdAsync(Guid userId, Guid businessId)
-        {
-            try
-            {
-                var businessMember = await _context.BusinessMembers
-                    .Where(bm => bm.UserId == userId && bm.BusinessId == businessId && bm.IsActive)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.Members)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.Province)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.District)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.ParentBusiness)
-                    .Include(bm => bm.Business)
-                        .ThenInclude(b => b.SubBusinesses)
-                    .FirstOrDefaultAsync();
+                    var provinceName = (await _context.Provinces.FindAsync(parentBusiness.ProvinceId))?.Name;
+                    var districtName = (await _context.Districts.FindAsync(parentBusiness.DistrictId))?.Name;
 
-                if (businessMember == null || !businessMember.Business.IsActive)
-                {
-                    return ServiceResponse<BusinessResponse>.ErrorResult("İşletme bulunamadı");
+                    var response = MapToResponse(newLocation, provinceName ?? "", districtName ?? "", "Owner", 0, 0);
+                    response.IsSubBusiness = true;
+                    response.ParentBusinessId = parentBusinessId;
+
+                    return ServiceResponse<BusinessResponse>.SuccessResult(response, "Yeni lokasyon eklendi.");
                 }
-
-                var response = new BusinessResponse
+                catch (Exception ex)
                 {
-                    Id = businessMember.Business.Id,
-                    Name = businessMember.Business.Name,
-                    Description = businessMember.Business.Description,
-                    Address = businessMember.Business.Address,
-                    PhoneNumber = businessMember.Business.PhoneNumber,
-                    ProvinceId = businessMember.Business.ProvinceId,
-                    ProvinceName = businessMember.Business.Province.Name,
-                    DistrictId = businessMember.Business.DistrictId,
-                    DistrictName = businessMember.Business.District.Name,
-                    Role = businessMember.Role.ToString(),
-                    MemberCount = businessMember.Business.Members.Count(m => m.IsActive),
-                    CreatedAt = businessMember.Business.CreatedAt,
-                    ParentBusinessId = businessMember.Business.ParentBusinessId,
-                    ParentBusinessName = businessMember.Business.ParentBusiness?.Name,
-                    IsSubBusiness = businessMember.Business.ParentBusinessId.HasValue,
-                    SubBusinessCount = businessMember.Business.SubBusinesses.Count(sb => sb.IsActive)
-                };
-
-                return ServiceResponse<BusinessResponse>.SuccessResult(response);
+                    return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon eklenirken hata oluştu", ex.Message);
+                }
             }
-            catch (Exception ex)
+            else
             {
-                return ServiceResponse<BusinessResponse>.ErrorResult(
-                    "İşletme getirilirken hata oluştu",
-                    ex.Message
-                );
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var province = await _context.Provinces.FindAsync(request.ProvinceId);
+                    var district = await _context.Districts.FindAsync(request.DistrictId);
+
+                    var business = new Models.Business
+                    {
+                        Name = request.Name.Trim(),
+                        Description = request.Description?.Trim(),
+                        Address = request.Address.Trim(),
+                        PhoneNumber = request.PhoneNumber.Trim(),
+                        ProvinceId = request.ProvinceId,
+                        DistrictId = request.DistrictId,
+                        OwnerId = userId,
+                        ParentBusinessId = null,
+                        LocationName = request.LocationName.Trim(),
+                        Latitude = request.Latitude,
+                        Longitude = request.Longitude,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+
+                    _context.Businesses.Add(business);
+                    await _context.SaveChangesAsync();
+
+                    var ownerMembership = new Models.BusinessMember
+                    {
+                        UserId = userId,
+                        BusinessId = business.Id,
+                        Role = UserRole.Owner
+                    };
+                    _context.BusinessMembers.Add(ownerMembership);
+                    await _context.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+
+                    var response = MapToResponse(business, province?.Name ?? "", district?.Name ?? "", "Owner", 1, 0);
+                    return ServiceResponse<BusinessResponse>.SuccessResult(response, "İşletme ve merkez lokasyonu başarıyla oluşturuldu");
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    return ServiceResponse<BusinessResponse>.ErrorResult("İşletme oluşturulurken hata oluştu", ex.Message);
+                }
             }
         }
 
@@ -243,7 +130,6 @@ namespace Personelim.Services.Business
         {
             try
             {
-                // Sadece Owner güncelleyebilir
                 var businessMember = await _context.BusinessMembers
                     .Include(bm => bm.Business)
                         .ThenInclude(b => b.Province)
@@ -256,71 +142,24 @@ namespace Personelim.Services.Business
 
                 if (businessMember == null || !businessMember.Business.IsActive)
                 {
-                    return ServiceResponse<BusinessResponse>.ErrorResult("İşletme bulunamadı veya yetkiniz yok. Sadece işletme sahipleri güncelleme yapabilir.");
+                    return ServiceResponse<BusinessResponse>.ErrorResult("İşletme bulunamadı veya yetkiniz yok.");
                 }
 
                 var business = businessMember.Business;
 
-                // İsim güncellemesi
-                if (!string.IsNullOrWhiteSpace(request.Name))
-                {
-                    var nameExists = await _context.Businesses
-                        .AnyAsync(b => b.Name.ToLower() == request.Name.Trim().ToLower()
-                                    && b.Id != businessId
-                                    && b.IsActive);
+                if (!string.IsNullOrWhiteSpace(request.Name)) business.Name = request.Name.Trim();
+                if (request.Description != null) business.Description = request.Description.Trim();
+                if (!string.IsNullOrWhiteSpace(request.Address)) business.Address = request.Address.Trim();
+                if (!string.IsNullOrWhiteSpace(request.PhoneNumber)) business.PhoneNumber = request.PhoneNumber.Trim();
+                
+                if (!string.IsNullOrWhiteSpace(request.LocationName)) business.LocationName = request.LocationName.Trim();
+                if (request.Latitude != 0 && request.Latitude != null) business.Latitude = (double)request.Latitude;
+                if (request.Longitude != 0 && request.Longitude != null) business.Longitude = (double)request.Longitude;
 
-                    if (nameExists)
-                    {
-                        return ServiceResponse<BusinessResponse>.ErrorResult("Bu isimde bir işletme zaten kayıtlı");
-                    }
-
-                    business.Name = request.Name.Trim();
-                }
-
-                // Açıklama güncellemesi
-                if (request.Description != null)
-                {
-                    business.Description = request.Description.Trim();
-                }
-
-                // Adres güncellemesi
-                if (!string.IsNullOrWhiteSpace(request.Address))
-                {
-                    if (request.Address.Length < 10)
-                    {
-                        return ServiceResponse<BusinessResponse>.ErrorResult("Adres en az 10 karakter olmalıdır");
-                    }
-                    business.Address = request.Address.Trim();
-                }
-
-                // Telefon güncellemesi
-                if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
-                {
-                    var cleanPhoneNumber = new string(request.PhoneNumber.Where(char.IsDigit).ToArray());
-
-                    if (cleanPhoneNumber.Length != 10 || !cleanPhoneNumber.StartsWith("5"))
-                    {
-                        return ServiceResponse<BusinessResponse>.ErrorResult("Geçerli bir telefon numarası giriniz");
-                    }
-
-                    business.PhoneNumber = request.PhoneNumber.Trim();
-                }
-
-                // Şehir ve İlçe güncellemesi
                 if (request.ProvinceId.HasValue && request.DistrictId.HasValue)
                 {
-                    var districtExists = await _context.Districts
-                        .AnyAsync(d => d.Id == request.DistrictId.Value && d.ProvinceId == request.ProvinceId.Value);
-
-                    if (!districtExists)
-                    {
-                        return ServiceResponse<BusinessResponse>.ErrorResult("Geçersiz ilçe seçimi");
-                    }
-
                     business.ProvinceId = request.ProvinceId.Value;
                     business.DistrictId = request.DistrictId.Value;
-
-                    // Province ve District'i yeniden yükle
                     await _context.Entry(business).Reference(b => b.Province).LoadAsync();
                     await _context.Entry(business).Reference(b => b.District).LoadAsync();
                 }
@@ -328,33 +167,73 @@ namespace Personelim.Services.Business
                 business.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                var response = new BusinessResponse
-                {
-                    Id = business.Id,
-                    Name = business.Name,
-                    Description = business.Description,
-                    Address = business.Address,
-                    PhoneNumber = business.PhoneNumber,
-                    ProvinceId = business.ProvinceId,
-                    ProvinceName = business.Province.Name,
-                    DistrictId = business.DistrictId,
-                    DistrictName = business.District.Name,
-                    Role = businessMember.Role.ToString(),
-                    MemberCount = await _context.BusinessMembers.CountAsync(bm => bm.BusinessId == businessId && bm.IsActive),
-                    CreatedAt = business.CreatedAt,
-                    ParentBusinessId = business.ParentBusinessId,
-                    IsSubBusiness = business.ParentBusinessId.HasValue,
-                    SubBusinessCount = await _context.Businesses.CountAsync(b => b.ParentBusinessId == businessId && b.IsActive)
-                };
+                var subCount = await _context.Businesses.CountAsync(b => b.ParentBusinessId == businessId && b.IsActive);
+                var memCount = await _context.BusinessMembers.CountAsync(bm => bm.BusinessId == businessId && bm.IsActive);
 
+                var response = MapToResponse(business, business.Province.Name, business.District.Name, businessMember.Role.ToString(), memCount, subCount);
                 return ServiceResponse<BusinessResponse>.SuccessResult(response, "İşletme başarıyla güncellendi");
             }
             catch (Exception ex)
             {
-                return ServiceResponse<BusinessResponse>.ErrorResult(
-                    "İşletme güncellenirken hata oluştu",
-                    ex.Message
-                );
+                return ServiceResponse<BusinessResponse>.ErrorResult("Güncelleme hatası", ex.Message);
+            }
+        }
+
+        public async Task<ServiceResponse<List<BusinessResponse>>> GetUserBusinessesAsync(Guid userId)
+        {
+            try
+            {
+                var businesses = await _context.BusinessMembers
+                    .Where(bm => bm.UserId == userId && bm.IsActive)
+                    .Include(bm => bm.Business).ThenInclude(b => b.Province)
+                    .Include(bm => bm.Business).ThenInclude(b => b.District)
+                    .Where(bm => bm.Business.IsActive)
+                    .Select(bm => new BusinessResponse
+                    {
+                        Id = bm.Business.Id,
+                        Name = bm.Business.Name,
+                        LocationName = bm.Business.LocationName,
+                        Latitude = bm.Business.Latitude,
+                        Longitude = bm.Business.Longitude,
+                        Role = bm.Role.ToString(),
+                        Address = bm.Business.Address,
+                        ProvinceName = bm.Business.Province.Name,
+                        DistrictName = bm.Business.District.Name,
+                        Description = bm.Business.Description,
+                        PhoneNumber = bm.Business.PhoneNumber,
+                        ProvinceId = bm.Business.ProvinceId,
+                        DistrictId = bm.Business.DistrictId,
+                        CreatedAt = bm.Business.CreatedAt
+                    }).ToListAsync();
+
+                return ServiceResponse<List<BusinessResponse>>.SuccessResult(businesses);
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<List<BusinessResponse>>.ErrorResult("İşletmeler getirilirken hata oluştu", ex.Message);
+            }
+        }
+
+        public async Task<ServiceResponse<BusinessResponse>> GetBusinessByIdAsync(Guid userId, Guid businessId)
+        {
+            try
+            {
+                var bm = await _context.BusinessMembers
+                   .Include(x => x.Business).ThenInclude(b => b.Province)
+                   .Include(x => x.Business).ThenInclude(b => b.District)
+                   .FirstOrDefaultAsync(x => x.UserId == userId && x.BusinessId == businessId && x.IsActive);
+
+                if (bm == null) return ServiceResponse<BusinessResponse>.ErrorResult("Bulunamadı");
+
+                var subCount = await _context.Businesses.CountAsync(b => b.ParentBusinessId == businessId && b.IsActive);
+                var memCount = await _context.BusinessMembers.CountAsync(m => m.BusinessId == businessId && m.IsActive);
+
+                var response = MapToResponse(bm.Business, bm.Business.Province.Name, bm.Business.District.Name, bm.Role.ToString(), memCount, subCount);
+                return ServiceResponse<BusinessResponse>.SuccessResult(response);
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<BusinessResponse>.ErrorResult("İşletme getirilirken hata oluştu", ex.Message);
             }
         }
 
@@ -380,50 +259,33 @@ namespace Personelim.Services.Business
 
                 var business = businessMember.Business;
 
-                // Alt işletmeleri de pasif yap
                 if (business.SubBusinesses != null && business.SubBusinesses.Any())
                 {
                     foreach (var subBusiness in business.SubBusinesses.Where(sb => sb.IsActive))
                     {
                         subBusiness.IsActive = false;
                         subBusiness.UpdatedAt = DateTime.UtcNow;
-
-                        // Alt işletmenin üyelerini de pasif yap
-                        var subMembers = await _context.BusinessMembers
-                            .Where(bm => bm.BusinessId == subBusiness.Id && bm.IsActive)
-                            .ToListAsync();
-
-                        foreach (var member in subMembers)
-                        {
-                            member.IsActive = false;
-                            member.UpdatedAt = DateTime.UtcNow;
-                        }
                     }
                 }
 
-                // Ana işletmenin üyelerini pasif yap
                 foreach (var member in business.Members.Where(m => m.IsActive))
                 {
                     member.IsActive = false;
                     member.UpdatedAt = DateTime.UtcNow;
                 }
 
-                // İşletmeyi pasif yap (soft delete)
                 business.IsActive = false;
                 business.UpdatedAt = DateTime.UtcNow;
-
+                
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-
+                
                 return ServiceResponse<bool>.SuccessResult(true, "İşletme başarıyla silindi");
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return ServiceResponse<bool>.ErrorResult(
-                    "İşletme silinirken hata oluştu",
-                    ex.Message
-                );
+                return ServiceResponse<bool>.ErrorResult("İşletme silinirken hata oluştu", ex.Message);
             }
         }
 
@@ -431,314 +293,246 @@ namespace Personelim.Services.Business
         {
             try
             {
-                // Kullanıcının ana işletmede üyesi olup olmadığını kontrol et
                 var hasAccess = await _context.BusinessMembers
                     .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive);
 
-                if (!hasAccess)
-                {
-                    return ServiceResponse<List<BusinessResponse>>.ErrorResult("Bu işletmeye erişim yetkiniz yok");
-                }
+                if (!hasAccess) return ServiceResponse<List<BusinessResponse>>.ErrorResult("Yetkiniz yok");
 
-                var subBusinesses = await _context.Businesses
+                var locations = await _context.Businesses
                     .Where(b => b.ParentBusinessId == parentBusinessId && b.IsActive)
                     .Include(b => b.Province)
                     .Include(b => b.District)
-                    .Include(b => b.Members)
                     .Select(b => new BusinessResponse
                     {
                         Id = b.Id,
                         Name = b.Name,
-                        Description = b.Description,
+                        LocationName = b.LocationName,
+                        Latitude = b.Latitude,
+                        Longitude = b.Longitude,
                         Address = b.Address,
-                        PhoneNumber = b.PhoneNumber,
-                        ProvinceId = b.ProvinceId,
                         ProvinceName = b.Province.Name,
-                        DistrictId = b.DistrictId,
                         DistrictName = b.District.Name,
-                        MemberCount = b.Members.Count(m => m.IsActive),
-                        CreatedAt = b.CreatedAt,
-                        ParentBusinessId = b.ParentBusinessId,
+                        Description = b.Description,
                         IsSubBusiness = true,
-                        SubBusinessCount = 0
+                        ParentBusinessId = b.ParentBusinessId,
+                        Role = "Branch",
+                        CreatedAt = b.CreatedAt
                     })
                     .ToListAsync();
 
-                return ServiceResponse<List<BusinessResponse>>.SuccessResult(subBusinesses);
+                return ServiceResponse<List<BusinessResponse>>.SuccessResult(locations);
             }
             catch (Exception ex)
             {
-                return ServiceResponse<List<BusinessResponse>>.ErrorResult(
-                    "Alt işletmeler getirilirken hata oluştu",
-                    ex.Message
-                );
+                return ServiceResponse<List<BusinessResponse>>.ErrorResult("Lokasyonlar getirilirken hata oluştu", ex.Message);
             }
         }
-        
+
         public async Task<ServiceResponse<BusinessResponse>> GetSubBusinessByIdAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId)
-{
-    try
-    {
-        // 1. İstenen alt işletmeyi ve ilişkili verileri çek
-        var subBusiness = await _context.Businesses
-            .Include(b => b.Province)
-            .Include(b => b.District)
-            .Include(b => b.Members)
-            .Include(b => b.ParentBusiness)
-            .FirstOrDefaultAsync(b => b.Id == subBusinessId 
-                                   && b.ParentBusinessId == parentBusinessId 
-                                   && b.IsActive);
-
-        if (subBusiness == null)
         {
-            return ServiceResponse<BusinessResponse>.ErrorResult("Alt işletme bulunamadı veya belirtilen ana işletmeye ait değil.");
+            try
+            {
+                var hasAccess = await _context.BusinessMembers
+                    .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive);
+
+                if (!hasAccess) return ServiceResponse<BusinessResponse>.ErrorResult("Bu lokasyonu görüntüleme yetkiniz yok.");
+
+                var subBusiness = await _context.Businesses
+                    .Include(b => b.Province)
+                    .Include(b => b.District)
+                    .FirstOrDefaultAsync(b => b.Id == subBusinessId && b.ParentBusinessId == parentBusinessId && b.IsActive);
+
+                if (subBusiness == null) return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon bulunamadı.");
+
+                var response = MapToResponse(subBusiness, subBusiness.Province?.Name ?? "", subBusiness.District?.Name ?? "", "Branch", 0, 0);
+                response.IsSubBusiness = true;
+
+                return ServiceResponse<BusinessResponse>.SuccessResult(response);
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon detayı getirilirken hata oluştu", ex.Message);
+            }
         }
 
-        // 2. Yetki Kontrolü:
-        // Kullanıcı Ana İşletmenin üyesi mi?
-        var hasParentAccess = await _context.BusinessMembers
-            .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive);
-        
-        // VEYA Kullanıcı direkt bu Alt İşletmenin bir üyesi mi?
-        var subMemberInfo = subBusiness.Members.FirstOrDefault(m => m.UserId == userId && m.IsActive);
-        var hasSubAccess = subMemberInfo != null;
+        public async Task<ServiceResponse<bool>> DeleteSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId)
+        {
+            try
+            {
+                var isOwner = await _context.BusinessMembers
+                    .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive && bm.Role == UserRole.Owner);
 
-        if (!hasParentAccess && !hasSubAccess)
-        {
-            return ServiceResponse<BusinessResponse>.ErrorResult("Bu alt işletmeyi görüntüleme yetkiniz yok.");
-        }
-        
-        string userRole = "Viewer";
-        if (hasSubAccess)
-        {
-            userRole = subMemberInfo.Role.ToString();
-        }
-        else if (hasParentAccess)
-        {
-            // Ana işletmedeki rolünü bulalım
-            var parentRole = await _context.BusinessMembers
-                .Where(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId)
-                .Select(bm => bm.Role)
-                .FirstOrDefaultAsync();
-            userRole = parentRole.ToString() + " (Ana İşletme)";
+                if (!isOwner) return ServiceResponse<bool>.ErrorResult("Lokasyon silme yetkiniz yok.");
+
+                var location = await _context.Businesses
+                    .FirstOrDefaultAsync(b => b.Id == subBusinessId && b.ParentBusinessId == parentBusinessId && b.IsActive);
+
+                if (location == null) return ServiceResponse<bool>.ErrorResult("Lokasyon bulunamadı.");
+
+                location.IsActive = false;
+                location.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return ServiceResponse<bool>.SuccessResult(true, "Lokasyon silindi.");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<bool>.ErrorResult("Silme hatası", ex.Message);
+            }
         }
 
-        
-        var response = new BusinessResponse
-        {
-            Id = subBusiness.Id,
-            Name = subBusiness.Name,
-            Description = subBusiness.Description,
-            Address = subBusiness.Address,
-            PhoneNumber = subBusiness.PhoneNumber,
-            ProvinceId = subBusiness.ProvinceId,
-            ProvinceName = subBusiness.Province.Name,
-            DistrictId = subBusiness.DistrictId,
-            DistrictName = subBusiness.District.Name,
-            Role = userRole,
-            MemberCount = subBusiness.Members.Count(m => m.IsActive),
-            CreatedAt = subBusiness.CreatedAt,
-            ParentBusinessId = subBusiness.ParentBusinessId,
-            ParentBusinessName = subBusiness.ParentBusiness?.Name,
-            IsSubBusiness = true,
-            SubBusinessCount = 0
-        };
-
-        return ServiceResponse<BusinessResponse>.SuccessResult(response);
-    }
-    catch (Exception ex)
-    {
-        return ServiceResponse<BusinessResponse>.ErrorResult(
-            "Alt işletme detayı getirilirken hata oluştu",
-            ex.Message
-        );
-    }
-}
         public async Task<ServiceResponse<BusinessResponse>> UpdateSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId, UpdateBusinessRequest request)
-{
-    try
-    {
-        var subBusiness = await _context.Businesses
-            .Include(b => b.Province)
-            .Include(b => b.District)
-            .Include(b => b.ParentBusiness)
-            .FirstOrDefaultAsync(b => b.Id == subBusinessId 
-                                   && b.ParentBusinessId == parentBusinessId 
-                                   && b.IsActive);
-
-        if (subBusiness == null)
         {
-            return ServiceResponse<BusinessResponse>.ErrorResult("Alt işletme bulunamadı veya bu ana işletmeye ait değil");
-        }
-        
-        var isParentOwner = await _context.BusinessMembers
-            .AnyAsync(bm => bm.UserId == userId 
-                         && bm.BusinessId == parentBusinessId 
-                         && bm.IsActive 
-                         && bm.Role == UserRole.Owner);
-        
-        var isSubBusinessOwner = await _context.BusinessMembers
-            .AnyAsync(bm => bm.UserId == userId 
-                         && bm.BusinessId == subBusinessId 
-                         && bm.IsActive 
-                         && bm.Role == UserRole.Owner);
-
-        if (!isParentOwner && !isSubBusinessOwner)
-        {
-            return ServiceResponse<BusinessResponse>.ErrorResult(
-                "Alt işletmeyi güncelleme yetkiniz yok. Ana işletme sahibi veya alt işletme sahibi olmanız gerekir.");
-        }
-        
-        if (!string.IsNullOrWhiteSpace(request.Name))
-        {
-            var nameExists = await _context.Businesses
-                .AnyAsync(b => b.Name.ToLower() == request.Name.Trim().ToLower()
-                            && b.Id != subBusinessId
-                            && b.IsActive);
-
-            if (nameExists)
+            try
             {
-                return ServiceResponse<BusinessResponse>.ErrorResult("Bu isimde bir işletme zaten kayıtlı");
-            }
+                var isOwner = await _context.BusinessMembers
+                    .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive && bm.Role == UserRole.Owner);
 
-            subBusiness.Name = request.Name.Trim();
-        }
-        
-        if (request.Description != null)
-        {
-            subBusiness.Description = request.Description.Trim();
-        }
-        
-        if (!string.IsNullOrWhiteSpace(request.Address))
-        {
-            if (request.Address.Length < 10)
+                if (!isOwner) return ServiceResponse<BusinessResponse>.ErrorResult("Yetkiniz yok.");
+
+                var location = await _context.Businesses
+                    .Include(b => b.Province).Include(b => b.District)
+                    .FirstOrDefaultAsync(b => b.Id == subBusinessId && b.ParentBusinessId == parentBusinessId && b.IsActive);
+
+                if (location == null) return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon bulunamadı.");
+
+                if (!string.IsNullOrWhiteSpace(request.LocationName)) location.LocationName = request.LocationName.Trim();
+                if (request.Latitude != 0 && request.Latitude != null) location.Latitude = (double)request.Latitude;
+                if (request.Longitude != 0 && request.Longitude != null) location.Longitude = (double)request.Longitude;
+
+                location.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                var response = MapToResponse(location, location.Province?.Name ?? "", location.District?.Name ?? "", "Owner", 0, 0);
+                response.IsSubBusiness = true;
+
+                return ServiceResponse<BusinessResponse>.SuccessResult(response, "Lokasyon güncellendi.");
+            }
+            catch (Exception ex)
             {
-                return ServiceResponse<BusinessResponse>.ErrorResult("Adres en az 10 karakter olmalıdır");
+                return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon güncellenemedi", ex.Message);
             }
-            subBusiness.Address = request.Address.Trim();
         }
-        
-        if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+
+        private static BusinessResponse MapToResponse(Models.Business b, string provName, string distName, string role, int memCount, int subCount)
         {
-            var cleanPhoneNumber = new string(request.PhoneNumber.Where(char.IsDigit).ToArray());
-
-            if (cleanPhoneNumber.Length != 10 || !cleanPhoneNumber.StartsWith("5"))
+            return new BusinessResponse
             {
-                return ServiceResponse<BusinessResponse>.ErrorResult("Geçerli bir telefon numarası giriniz");
-            }
-
-            subBusiness.PhoneNumber = request.PhoneNumber.Trim();
+                Id = b.Id,
+                Name = b.Name,
+                Description = b.Description,
+                Address = b.Address,
+                PhoneNumber = b.PhoneNumber,
+                LocationName = b.LocationName,
+                Latitude = b.Latitude,
+                Longitude = b.Longitude,
+                ProvinceId = b.ProvinceId,
+                ProvinceName = provName,
+                DistrictId = b.DistrictId,
+                DistrictName = distName,
+                Role = role,
+                MemberCount = memCount,
+                CreatedAt = b.CreatedAt,
+                ParentBusinessId = b.ParentBusinessId,
+                IsSubBusiness = b.ParentBusinessId.HasValue,
+                SubBusinessCount = subCount
+            };
         }
-        
-        if (request.ProvinceId.HasValue && request.DistrictId.HasValue)
+        // ... namespace ve class tanımları ...
+
+        // 3. LOKASYON EKLEME (Yeni Metot)
+        public async Task<ServiceResponse<BusinessResponse>> CreateLocationAsync(
+             Guid userId, Guid parentBusinessId, CreateLocationRequest request) 
         {
-            var districtExists = await _context.Districts
-                .AnyAsync(d => d.Id == request.DistrictId.Value && d.ProvinceId == request.ProvinceId.Value);
-
-            if (!districtExists)
-            {
-                return ServiceResponse<BusinessResponse>.ErrorResult("Geçersiz ilçe seçimi");
-            }
-
-            subBusiness.ProvinceId = request.ProvinceId.Value;
-            subBusiness.DistrictId = request.DistrictId.Value;
+            // Önce Ana İşletmeyi Bul
+            var parentBusiness = await _context.Businesses
+                .FirstOrDefaultAsync(b => b.Id == parentBusinessId && b.IsActive);
             
-            await _context.Entry(subBusiness).Reference(b => b.Province).LoadAsync();
-            await _context.Entry(subBusiness).Reference(b => b.District).LoadAsync();
+            if (parentBusiness == null) return ServiceResponse<BusinessResponse>.ErrorResult("Ana işletme bulunamadı");
+
+            // Yetki Kontrolü: SADECE OWNER
+            var isOwner = await _context.BusinessMembers
+                .AnyAsync(bm => bm.BusinessId == parentBusinessId && bm.UserId == userId && bm.IsActive && bm.Role == UserRole.Owner);
+
+            if (!isOwner) return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon ekleme yetkiniz yok.");
+
+            try
+            {
+                var newLocation = new Models.Business
+                {
+                    ParentBusinessId = parentBusinessId,
+                    OwnerId = parentBusiness.OwnerId,
+                    
+                    // --- Sadece Client'tan gelen veriler ---
+                    LocationName = request.LocationName.Trim(),
+                    Latitude = request.Latitude,
+                    Longitude = request.Longitude,
+
+                    // --- Ana Firmadan MIRAS Alınan veriler ---
+                    Name = parentBusiness.Name, 
+                    Description = $"{parentBusiness.Name} - {request.LocationName}",
+                    Address = parentBusiness.Address, 
+                    PhoneNumber = parentBusiness.PhoneNumber,
+                    ProvinceId = parentBusiness.ProvinceId,
+                    DistrictId = parentBusiness.DistrictId,
+                    
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.Businesses.Add(newLocation);
+                await _context.SaveChangesAsync();
+
+                // Response hazırlama
+                var provinceName = (await _context.Provinces.FindAsync(parentBusiness.ProvinceId))?.Name;
+                var districtName = (await _context.Districts.FindAsync(parentBusiness.DistrictId))?.Name;
+
+                var response = MapToResponse(newLocation, provinceName ?? "", districtName ?? "", "Owner", 0, 0);
+                response.IsSubBusiness = true;
+                response.ParentBusinessId = parentBusinessId;
+
+                return ServiceResponse<BusinessResponse>.SuccessResult(response, "Yeni lokasyon eklendi.");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon eklenirken hata oluştu", ex.Message);
+            }
         }
 
-        subBusiness.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-
-        var userRole = isSubBusinessOwner ? "Owner" : "Owner (Ana İşletme)";
-
-        var response = new BusinessResponse
+        // 6. LOKASYON GÜNCELLEME (UpdateLocationRequest kullanacak şekilde revize)
+        public async Task<ServiceResponse<BusinessResponse>> UpdateSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId, UpdateLocationRequest request)
         {
-            Id = subBusiness.Id,
-            Name = subBusiness.Name,
-            Description = subBusiness.Description,
-            Address = subBusiness.Address,
-            PhoneNumber = subBusiness.PhoneNumber,
-            ProvinceId = subBusiness.ProvinceId,
-            ProvinceName = subBusiness.Province.Name,
-            DistrictId = subBusiness.DistrictId,
-            DistrictName = subBusiness.District.Name,
-            Role = userRole,
-            MemberCount = await _context.BusinessMembers.CountAsync(bm => bm.BusinessId == subBusinessId && bm.IsActive),
-            CreatedAt = subBusiness.CreatedAt,
-            ParentBusinessId = subBusiness.ParentBusinessId,
-            ParentBusinessName = subBusiness.ParentBusiness?.Name,
-            IsSubBusiness = true,
-            SubBusinessCount = 0
-        };
+            try
+            {
+                var isOwner = await _context.BusinessMembers
+                    .AnyAsync(bm => bm.UserId == userId && bm.BusinessId == parentBusinessId && bm.IsActive && bm.Role == UserRole.Owner);
+                
+                if (!isOwner) return ServiceResponse<BusinessResponse>.ErrorResult("Yetkiniz yok.");
 
-        return ServiceResponse<BusinessResponse>.SuccessResult(response, "Alt işletme başarıyla güncellendi");
-    }
-    catch (Exception ex)
-    {
-        return ServiceResponse<BusinessResponse>.ErrorResult(
-            "Alt işletme güncellenirken hata oluştu",
-            ex.Message
-        );
-    }
-}
+                var location = await _context.Businesses
+                    .Include(b=> b.Province).Include(b=>b.District)
+                    .FirstOrDefaultAsync(b => b.Id == subBusinessId && b.ParentBusinessId == parentBusinessId && b.IsActive);
 
-public async Task<ServiceResponse<bool>> DeleteSubBusinessAsync(Guid userId, Guid parentBusinessId, Guid subBusinessId)
-{
-    using var transaction = await _context.Database.BeginTransactionAsync();
-    try
-    {
-        var subBusiness = await _context.Businesses
-            .Include(b => b.Members)
-            .FirstOrDefaultAsync(b => b.Id == subBusinessId 
-                                   && b.ParentBusinessId == parentBusinessId 
-                                   && b.IsActive);
+                if (location == null) return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon bulunamadı.");
 
-        if (subBusiness == null)
-        {
-            return ServiceResponse<bool>.ErrorResult("Alt işletme bulunamadı veya bu ana işletmeye ait değil");
+                // Sadece izin verilen alanları güncelle
+                if (!string.IsNullOrWhiteSpace(request.LocationName)) location.LocationName = request.LocationName.Trim();
+                if (request.Latitude.HasValue && request.Latitude != 0) location.Latitude = request.Latitude.Value;
+                if (request.Longitude.HasValue && request.Longitude != 0) location.Longitude = request.Longitude.Value;
+                
+                location.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                var response = MapToResponse(location, location.Province?.Name ?? "", location.District?.Name ?? "", "Owner", 0, 0);
+                response.IsSubBusiness = true;
+                
+                return ServiceResponse<BusinessResponse>.SuccessResult(response, "Lokasyon güncellendi.");
+            }
+            catch (Exception ex)
+            {
+                return ServiceResponse<BusinessResponse>.ErrorResult("Lokasyon güncellenemedi", ex.Message);
+            }
         }
-        
-        var isParentOwner = await _context.BusinessMembers
-            .AnyAsync(bm => bm.UserId == userId 
-                         && bm.BusinessId == parentBusinessId 
-                         && bm.IsActive 
-                         && bm.Role == UserRole.Owner);
-        
-        var isSubBusinessOwner = await _context.BusinessMembers
-            .AnyAsync(bm => bm.UserId == userId 
-                         && bm.BusinessId == subBusinessId 
-                         && bm.IsActive 
-                         && bm.Role == UserRole.Owner);
-
-        if (!isParentOwner && !isSubBusinessOwner)
-        {
-            return ServiceResponse<bool>.ErrorResult(
-                "Alt işletmeyi silme yetkiniz yok. Ana işletme sahibi veya alt işletme sahibi olmanız gerekir.");
-        }
-        
-        foreach (var member in subBusiness.Members.Where(m => m.IsActive))
-        {
-            member.IsActive = false;
-            member.UpdatedAt = DateTime.UtcNow;
-        }
-        
-        subBusiness.IsActive = false;
-        subBusiness.UpdatedAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        return ServiceResponse<bool>.SuccessResult(true, "Alt işletme başarıyla silindi");
-    }
-    catch (Exception ex)
-    {
-        await transaction.RollbackAsync();
-        return ServiceResponse<bool>.ErrorResult(
-            "Alt işletme silinirken hata oluştu",
-            ex.Message
-        );
-    }
-}
     }
 }

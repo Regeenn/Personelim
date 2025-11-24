@@ -18,18 +18,10 @@ namespace Personelim.Controllers
             _authService = authService;
         }
 
-        [HttpPost("register")]
-        public async Task<ActionResult<ServiceResponse<AuthResponse>>> Register([FromBody] RegisterRequest request)
-        {
-            var result = await _authService.RegisterAsync(request);
-            
-            if (!result.Success)
-            {
-                return BadRequest(result);
-            }
-
-            return Ok(result);
-        }
+        /* 
+           GÜNCELLEME: Register (Kayıt Ol) endpoint'i kaldırıldı.
+           Artık kullanıcılar dışarıdan kendi kendine kayıt olamaz.
+        */
 
         [HttpPost("login")]
         public async Task<ActionResult<ServiceResponse<AuthResponse>>> Login([FromBody] LoginRequest request)
@@ -40,7 +32,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -55,7 +46,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -71,7 +61,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -87,7 +76,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -102,7 +90,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -117,7 +104,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -131,7 +117,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -145,7 +130,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
 
@@ -159,7 +143,6 @@ namespace Personelim.Controllers
             {
                 return BadRequest(result);
             }
-
             return Ok(result);
         }
     }

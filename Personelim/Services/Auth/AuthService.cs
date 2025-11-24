@@ -27,79 +27,6 @@ namespace Personelim.Services.Auth
             _emailService = emailService;
         }
 
-        public async Task<ServiceResponse<AuthResponse>> RegisterAsync(RegisterRequest request)
-{
-    try
-    {
-        var existingUser = await _context.Users
-            .FirstOrDefaultAsync(u => u.Email == request.Email.ToLower());
-
-        if (existingUser != null)
-        {
-            if (!existingUser.IsActive)
-            {
-                existingUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-                existingUser.FirstName = request.FirstName;
-                existingUser.LastName = request.LastName;
-                existingUser.PhoneNumber = request.PhoneNumber;
-                existingUser.IsActive = true;
-                existingUser.UpdatedAt = DateTime.UtcNow;
-                existingUser.LastLoginAt = null;
-
-                await _context.SaveChangesAsync();
-                
-                var reactivatedToken = GenerateJwtToken(existingUser);
-
-                var reactivatedResponse = new AuthResponse
-                {
-                    UserId = existingUser.Id,
-                    Email = existingUser.Email,
-                    FullName = existingUser.GetFullName(),
-                    Token = reactivatedToken.Token,
-                    ExpiresAt = reactivatedToken.ExpiresAt
-                };
-
-                return ServiceResponse<AuthResponse>.SuccessResult(reactivatedResponse, "Kayıt başarılı");
-            }
-            else
-            {
-                return ServiceResponse<AuthResponse>.ErrorResult("Bu email adresi zaten kayıtlı");
-            }
-        }
-        
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-
-        var user = new User
-        {
-            Email = request.Email.ToLower(),
-            PasswordHash = passwordHash,
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            PhoneNumber = request.PhoneNumber
-        };
-
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync();
-        
-        var token = GenerateJwtToken(user);
-
-        var response = new AuthResponse
-        {
-            UserId = user.Id,
-            Email = user.Email,
-            FullName = user.GetFullName(),
-            Token = token.Token,
-            ExpiresAt = token.ExpiresAt
-        };
-
-        return ServiceResponse<AuthResponse>.SuccessResult(response, "Kayıt başarılı");
-    }
-    catch (Exception ex)
-    {
-        return ServiceResponse<AuthResponse>.ErrorResult("Kayıt sırasında hata oluştu", ex.Message);
-    }
-}
-
         public async Task<ServiceResponse<AuthResponse>> LoginAsync(LoginRequest request)
         {
             try
@@ -160,7 +87,6 @@ namespace Personelim.Services.Auth
                     FirstName = user.FirstName,
                     LastName = user.LastName,
                     FullName = user.GetFullName(),
-                    PhoneNumber = user.PhoneNumber,
                     CreatedAt = user.CreatedAt,
                     LastLoginAt = user.LastLoginAt,
                     BusinessCount = user.BusinessMemberships.Count(bm => bm.IsActive),
@@ -212,11 +138,6 @@ namespace Personelim.Services.Auth
                     user.LastName = request.LastName;
                 }
 
-                if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
-                {
-                    user.PhoneNumber = request.PhoneNumber;
-                }
-
                 user.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
@@ -228,7 +149,6 @@ namespace Personelim.Services.Auth
                     FirstName = user.FirstName,
                     LastName = user.LastName,
                     FullName = user.GetFullName(),
-                    PhoneNumber = user.PhoneNumber,
                     CreatedAt = user.CreatedAt,
                     LastLoginAt = user.LastLoginAt
                 };
@@ -348,13 +268,11 @@ namespace Personelim.Services.Auth
                     membership.UpdatedAt = DateTime.UtcNow;
                     affectedRecords++;
                 }
-
-                // Kullanıcıyı pasif yap (soft delete)
+                
                 user.IsActive = false;
                 user.UpdatedAt = DateTime.UtcNow;
                 affectedRecords++;
-
-                // Değişiklikleri kaydet
+                
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
@@ -407,7 +325,6 @@ namespace Personelim.Services.Auth
 
                 if (user == null)
                 {
-                    // Güvenlik için her zaman başarılı mesaj döndür
                     return ServiceResponse<ForgotPasswordResponse>.SuccessResult(
                         new ForgotPasswordResponse 
                         { 
@@ -418,8 +335,7 @@ namespace Personelim.Services.Auth
                         "Eğer bu email kayıtlıysa, şifre sıfırlama kodu gönderildi"
                     );
                 }
-
-                // Eski aktif tokenları pasif yap
+                
                 var oldTokens = await _context.PasswordResetTokens
                     .Where(t => t.UserId == user.Id && !t.IsUsed && t.ExpiresAt > DateTime.UtcNow)
                     .ToListAsync();
@@ -429,8 +345,7 @@ namespace Personelim.Services.Auth
                     token.IsUsed = true;
                     token.UsedAt = DateTime.UtcNow;
                 }
-
-                // Yeni 6 haneli kod oluştur
+                
                 var code = GenerateRandomCode();
                 var expiresAt = DateTime.UtcNow.AddMinutes(15);
 
@@ -443,8 +358,7 @@ namespace Personelim.Services.Auth
 
                 _context.PasswordResetTokens.Add(resetToken);
                 await _context.SaveChangesAsync();
-
-                // Email gönder
+                
                 var emailSent = await _emailService.SendPasswordResetCodeAsync(
                     user.Email, 
                     code, 
@@ -540,12 +454,10 @@ namespace Personelim.Services.Auth
                 {
                     return ServiceResponse<bool>.ErrorResult("Geçersiz veya süresi dolmuş kod");
                 }
-
-                // Şifreyi güncelle
+                
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
                 user.UpdatedAt = DateTime.UtcNow;
-
-                // Token'ı kullanılmış olarak işaretle
+                
                 token.IsUsed = true;
                 token.UsedAt = DateTime.UtcNow;
 
